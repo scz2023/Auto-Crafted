@@ -27,6 +27,17 @@ export default defineNuxtConfig({
     prerender: {
       routes: ['/'],
       crawlLinks: false
+    },
+    // 确保服务器端 API 在 Tauri 中可用
+    experimental: {
+      wasm: true
+    },
+    // 在 Tauri 环境中，需要确保服务器端代码能运行
+    storage: {
+      fs: {
+        driver: 'fs',
+        base: './.nitro/storage'
+      }
     }
   }
 })

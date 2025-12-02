@@ -13,7 +13,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:portable": "node scripts/build-portable.js",
-    "tauri:build:portable:ps1": "powershell -ExecutionPolicy Bypass -File scripts/build-portable.ps1"
+    "tauri:build:portable:ps1": "powershell -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
+    "debug:run": "powershell -ExecutionPolicy Bypass -File scripts/run-debug.ps1"
   },
   "dependencies": {
     "@element-plus/nuxt": "^1.1.4",

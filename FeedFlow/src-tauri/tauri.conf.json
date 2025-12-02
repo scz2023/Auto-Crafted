@@ -37,7 +37,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../rss-reader.db"
+      "../rss-reader.db",
+      "../.output/server/**/*"
     ]
   }
 }

@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Debug version with console window enabled
+// Copy this to main.rs temporarily to see console output
 
 mod db;
 
@@ -199,7 +199,7 @@ fn start_server_at(server_dir: &std::path::Path, server_index: &std::path::Path)
     let mut cmd = Command::new(node_cmd);
     cmd.arg(server_index)
        .current_dir(server_dir)
-       .stdout(std::process::Stdio::piped())  // 保留输出以便调试
+       .stdout(std::process::Stdio::piped())
        .stderr(std::process::Stdio::piped());
     
     // 设置环境变量
@@ -245,6 +245,27 @@ fn start_server_at(server_dir: &std::path::Path, server_index: &std::path::Path)
 }
 
 fn main() {
+    // 在 Windows 上分配控制台窗口（用于调试）
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        use winapi::um::consoleapi::AllocConsole;
+        use winapi::um::processenv::GetStdHandle;
+        use winapi::um::winbase::STD_OUTPUT_HANDLE;
+        use winapi::um::wincon::SetConsoleTitleA;
+        
+        unsafe {
+            AllocConsole();
+            let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+            let mut handle = std::io::BufWriter::new(std::fs::File::from_raw_handle(std::io::RawHandle::from_raw_handle(stdout as *mut _)));
+            std::io::stdout().flush().unwrap();
+        }
+        
+        unsafe {
+            SetConsoleTitleA(b"FeedFlow Debug Console\0".as_ptr() as *const i8);
+        }
+    }
+    
     let server_process: ServerProcess = Arc::new(Mutex::new(None));
     let server_process_clone = server_process.clone();
     
@@ -283,7 +304,7 @@ fn main() {
                 if let Ok(mut process) = server_process_clone.lock() {
                     if let Some(mut child) = process.take() {
                         let _ = child.kill();
-                        println!("Nitro 服务器已停止");
+                        println!("Nitro server stopped");
                     }
                 }
             }

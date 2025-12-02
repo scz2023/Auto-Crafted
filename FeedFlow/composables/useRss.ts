@@ -64,6 +64,10 @@ function normalizeRssUrl(url: string): string {
 // 客户端 RSS 解析 - 通过服务器 API
 export async function parseFeed(url: string, timeout?: number) {
   try {
+    // 在 Tauri 环境中，确保服务器已启动
+    const { ensureServerReady } = await import('./useServerReady')
+    await ensureServerReady()
+    
     // 标准化 URL（转换 rsshub:// 协议等）
     const normalizedUrl = normalizeRssUrl(url)
     
