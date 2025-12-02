@@ -8,15 +8,27 @@ async function checkServerReady(): Promise<boolean> {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ sql: 'SELECT 1', params: [] }),
-      signal: AbortSignal.timeout(2000)
+      signal: AbortSignal.timeout(3000) // 增加超时时间到 3 秒
     })
-    return response.ok || response.status === 400 // 400 表示服务器已启动但请求格式错误（这是正常的）
+    // 200 表示成功，400 表示服务器已启动但请求格式错误（这是正常的）
+    // 500 表示服务器已启动但处理出错（也算服务器已启动）
+    const isReady = response.ok || response.status === 400 || response.status === 500
+    if (isReady) {
+      console.log('[checkServerReady] 服务器已就绪，状态码:', response.status)
+    }
+    return isReady
   } catch (error: any) {
     // 网络错误或超时表示服务器未启动
-    if (error.name === 'AbortError' || error.message?.includes('fetch')) {
+    if (error.name === 'AbortError' || 
+        error.name === 'TimeoutError' ||
+        error.message?.includes('fetch') ||
+        error.message?.includes('network') ||
+        error.message?.includes('Failed to fetch')) {
+      console.log('[checkServerReady] 服务器未就绪:', error.name || error.message)
       return false
     }
     // 其他错误可能表示服务器已启动但请求失败
+    console.log('[checkServerReady] 服务器可能已启动，但请求失败:', error.message)
     return true
   }
 }

@@ -23,6 +23,19 @@ export default defineNuxtConfig({
 
   ssr: false, // Tauri 需要客户端渲染
 
+  vite: {
+    optimizeDeps: {
+      include: ['@tauri-apps/api/core']
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: undefined // 确保 Tauri API 被正确打包
+        }
+      }
+    }
+  },
+
   nitro: {
     prerender: {
       routes: ['/'],

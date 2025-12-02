@@ -271,8 +271,6 @@ fn main() {
     
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_path::init())
         .invoke_handler(tauri::generate_handler![db_query])
         .setup(move |app| {
             // 应用启动时启动服务器

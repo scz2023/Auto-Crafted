@@ -26,9 +26,11 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 3. Build Tauri application
+# 3. Build Tauri application (Release mode, 不打包成 MSI，只生成可执行文件)
 Write-Host "Building Tauri application (Release mode)..." -ForegroundColor Cyan
-npm run tauri:build
+Set-Location $tauriDir
+cargo build --release
+Set-Location $rootDir
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Warning: Tauri build had errors, but checking if release version was generated..." -ForegroundColor Yellow
 }

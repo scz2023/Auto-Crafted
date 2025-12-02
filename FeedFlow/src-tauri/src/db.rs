@@ -1,6 +1,6 @@
-use rusqlite::{Connection, Result, params};
+use rusqlite::{Connection, Result};
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 pub fn get_db_path(app: &AppHandle) -> Result<PathBuf> {
     // 使用 Tauri 的应用数据目录
@@ -12,11 +12,11 @@ pub fn get_db_path(app: &AppHandle) -> Result<PathBuf> {
 pub fn init_database(db_path: &PathBuf) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
     
-    // 启用外键约束
+    // 启用外键约束（PRAGMA 不返回结果，使用 execute）
     conn.execute("PRAGMA foreign_keys = ON", [])?;
     
-    // 设置 WAL 模式
-    conn.execute("PRAGMA journal_mode = WAL", [])?;
+    // 设置 WAL 模式（PRAGMA 可能返回结果，使用 execute_batch 或忽略结果）
+    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     
     // 创建表
     conn.execute(

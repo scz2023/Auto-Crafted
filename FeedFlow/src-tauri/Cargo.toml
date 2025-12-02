@@ -11,10 +11,8 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["path-all", "fs-all"] }
-tauri-plugin-shell = { version = "2", features = ["execute"] }
-tauri-plugin-fs = { version = "2", features = ["read-file", "write-file", "create-dir", "exists"] }
-tauri-plugin-path = { version = "2", features = ["app-data-dir", "resource-dir"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = { version = "2" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }

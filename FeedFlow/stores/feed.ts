@@ -108,12 +108,23 @@ export const useFeedStore = defineStore('feed', {
       const timeout = settings.refreshTimeout ? settings.refreshTimeout * 1000 : undefined
 
       // 解析 RSS
-      const feedData = await parseFeed(url, timeout)
+      let feedData: any = null
+      try {
+        feedData = await parseFeed(url, timeout)
+        // 确保 feedData 是对象
+        if (!feedData || typeof feedData !== 'object') {
+          console.warn('RSS 解析返回无效数据，将使用默认值')
+          feedData = null
+        }
+      } catch (error: any) {
+        console.warn(`RSS 解析失败，将仅保存订阅源信息: ${url}`, error.message)
+        feedData = null
+      }
       
       // 尝试获取favicon
       let favicon = null
       try {
-        const feedLink = feedData.link || url
+        const feedLink = feedData?.link || url
         if (feedLink) {
           const feedUrl = new URL(feedLink)
           favicon = `${feedUrl.protocol}//${feedUrl.host}/favicon.ico`
@@ -128,9 +139,9 @@ export const useFeedStore = defineStore('feed', {
       `)
       
       const result = await insert.run(
-        title || feedData.title || '未命名订阅',
+        title || feedData?.title || '未命名订阅',
         url,
-        feedData.description || '',
+        feedData?.description || '',
         favicon,
         1, // 新添加的 RSS 自动订阅
         new Date().toISOString()
@@ -138,8 +149,14 @@ export const useFeedStore = defineStore('feed', {
       
       const feedId = result.lastInsertRowid as number
 
-      // 保存文章
-      await this.saveArticles(feedId, feedData.items)
+      // 保存文章（如果解析成功且有文章）
+      if (feedData && feedData.items && Array.isArray(feedData.items)) {
+        try {
+          await this.saveArticles(feedId, feedData.items)
+        } catch (error) {
+          console.warn(`保存文章失败 (feedId: ${feedId}):`, error)
+        }
+      }
 
       return feedId
     },
@@ -280,7 +297,22 @@ export const useFeedStore = defineStore('feed', {
       const settings = await settingsStore.getSettings()
       const timeout = settings.refreshTimeout ? settings.refreshTimeout * 1000 : undefined
       
-      const feedData = await refreshFeedRss(feed.url, timeout)
+      let feedData: any = null
+      try {
+        feedData = await refreshFeedRss(feed.url, timeout)
+        // 确保 feedData 是对象
+        if (!feedData || typeof feedData !== 'object') {
+          console.warn('RSS 刷新返回无效数据')
+          feedData = null
+        }
+      } catch (error: any) {
+        console.error(`刷新订阅失败 (id: ${id}):`, error)
+        throw new Error(error.message || '刷新订阅失败')
+      }
+      
+      if (!feedData) {
+        throw new Error('无法获取订阅数据')
+      }
       
       // 更新订阅信息
       const update = db.prepare(`
@@ -289,41 +321,91 @@ export const useFeedStore = defineStore('feed', {
         WHERE id = ?
       `)
       await update.run(
-        feedData.title || feed.title,
-        feedData.description || feed.description || '',
+        feedData?.title || feed.title,
+        feedData?.description || feed.description || '',
         new Date().toISOString(),
         id
       )
 
-      // 保存新文章
-      await this.saveArticles(id, feedData.items)
+      // 保存新文章（如果存在）
+      if (feedData?.items && Array.isArray(feedData.items)) {
+        try {
+          await this.saveArticles(id, feedData.items)
+        } catch (error) {
+          console.warn(`保存文章失败 (feedId: ${id}):`, error)
+        }
+      }
     },
 
     async saveArticles(feedId: number, items: any[]) {
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        console.warn(`[saveArticles] 没有文章需要保存 (feedId: ${feedId})`)
+        return
+      }
+
+      console.log(`[saveArticles] 开始保存文章 (feedId: ${feedId}, 数量: ${items.length})`)
+      
       const db = useDatabase()
       const insert = db.prepare(`
         INSERT OR IGNORE INTO articles (feed_id, title, link, content, snippet, pub_date, guid)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
 
+      let savedCount = 0
+      let skippedCount = 0
+      let errorCount = 0
+
       for (const item of items) {
-        const content = item.content || item.contentSnippet || item.summary || ''
-        const snippet = item.contentSnippet || item.summary || content.substring(0, 200)
-        const guid = item.guid || item.id || item.link || ''
-        
-        await insert.run(
-          feedId,
-          item.title || '无标题',
-          item.link || '',
-          content,
-          snippet,
-          item.pubDate || item.isoDate || new Date().toISOString(),
-          guid
-        )
+        try {
+          if (!item) {
+            console.warn('[saveArticles] 跳过空项目')
+            skippedCount++
+            continue
+          }
+
+          const content = item.content || item.contentSnippet || item.summary || ''
+          const snippet = item.contentSnippet || item.summary || content.substring(0, 200)
+          const guid = item.guid || item.id || item.link || ''
+          
+          // 如果没有 guid 和 link，跳过这篇文章（无法唯一标识）
+          if (!guid && !item.link) {
+            console.warn('[saveArticles] 跳过没有 guid 和 link 的文章:', item.title || '无标题')
+            skippedCount++
+            continue
+          }
+          
+          const result = await insert.run(
+            feedId,
+            item.title || '无标题',
+            item.link || '',
+            content,
+            snippet,
+            item.pubDate || item.isoDate || new Date().toISOString(),
+            guid
+          )
+          
+          // INSERT OR IGNORE 不会返回 changes，所以无法直接判断是否插入成功
+          // 但如果没有错误，就认为成功了
+          savedCount++
+        } catch (error: any) {
+          errorCount++
+          console.error(`[saveArticles] 保存文章失败:`, { 
+            feedId, 
+            itemTitle: item?.title || '无标题',
+            error: error.message || error.toString() 
+          })
+          // 继续处理下一篇文章，不中断整个流程
+        }
       }
 
+      console.log(`[saveArticles] 保存完成 (feedId: ${feedId}): 成功 ${savedCount}, 跳过 ${skippedCount}, 错误 ${errorCount}`)
+
       // 检查并清理超出限制的文章
-      await this.cleanupOldArticles()
+      try {
+        await this.cleanupOldArticles()
+      } catch (error) {
+        console.warn('[saveArticles] 清理旧文章失败:', error)
+      }
     },
 
     async cleanupOldArticles() {

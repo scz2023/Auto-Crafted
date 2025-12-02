@@ -127,6 +127,7 @@
 import { ref, onMounted, computed, watch, onUnmounted, nextTick, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading, Star, StarFilled, MagicStick } from '@element-plus/icons-vue'
+import { getArticleSummary, generateArticleSummary, translateArticle } from '~/composables/useArticleAI'
 import { ElMessage } from 'element-plus'
 import { useArticleStore } from '~/stores/article'
 import { useSettingsStore } from '~/stores/settings'
@@ -457,26 +458,22 @@ const loadArticleTranslation = async (article: any) => {
   }
 
   try {
-    const response = await $fetch('/api/article/translate', {
-      method: 'POST',
-      body: {
-        articleId: article.id,
-        translateTitleOnly: true  // 只翻译标题
-      }
+    const response = await translateArticle(article.id, {
+      translateTitleOnly: true  // 只翻译标题
     })
 
-    if ((response as any).success) {
+    if (response.success) {
       // 更新文章对象
-      if ((response as any).titleTranslated) {
-        article.title_translated = (response as any).titleTranslated
+      if (response.titleTranslated) {
+        article.title_translated = response.titleTranslated
       }
-      if ((response as any).detectedLanguage) {
-        article.detected_language = (response as any).detectedLanguage
+      if (response.detectedLanguage) {
+        article.detected_language = response.detectedLanguage
       }
       
       // 如果不需要翻译（已经是目标语言）
-      if ((response as any).noTranslationNeeded) {
-        article.detected_language = (response as any).detectedLanguage
+      if (response.noTranslationNeeded) {
+        article.detected_language = response.detectedLanguage
         article.title_translated = article.title
       }
     }
@@ -549,29 +546,25 @@ const loadTranslation = async () => {
   // 尝试从数据库加载或生成内容翻译
   translating.value = true
   try {
-    console.log('loadTranslation: 调用内容翻译 API')
-    const response = await $fetch('/api/article/translate', {
-      method: 'POST',
-      body: {
-        articleId: selectedArticle.value.id,
-        translateContentOnly: true  // 只翻译内容
-      }
+    console.log('loadTranslation: 调用内容翻译 composable')
+    const response = await translateArticle(selectedArticle.value.id, {
+      translateContentOnly: true  // 只翻译内容
     })
 
-    console.log('loadTranslation: API 响应:', response)
+    console.log('loadTranslation: 响应:', response)
 
-    if ((response as any).success) {
+    if (response.success) {
       // 更新本地文章对象
-      if ((response as any).contentTranslated) {
-        selectedArticle.value.content_translated = (response as any).contentTranslated
+      if (response.contentTranslated) {
+        selectedArticle.value.content_translated = response.contentTranslated
       }
-      if ((response as any).detectedLanguage) {
-        selectedArticle.value.detected_language = (response as any).detectedLanguage
+      if (response.detectedLanguage) {
+        selectedArticle.value.detected_language = response.detectedLanguage
       }
       
       // 如果不需要翻译（已经是目标语言），也更新检测到的语言
-      if ((response as any).noTranslationNeeded) {
-        selectedArticle.value.detected_language = (response as any).detectedLanguage
+      if (response.noTranslationNeeded) {
+        selectedArticle.value.detected_language = response.detectedLanguage
         // 将原文作为翻译结果（因为已经是目标语言）
         selectedArticle.value.content_translated = selectedArticle.value.content || selectedArticle.value.snippet || ''
         console.log('loadTranslation: 文章已经是目标语言，无需翻译')
@@ -582,13 +575,7 @@ const loadTranslation = async () => {
   } catch (error: any) {
     console.error('加载内容翻译失败:', error)
     // 显示错误提示
-    if (error.data?.message) {
-      console.error('翻译错误:', error.data.message)
-      ElMessage.error(`内容翻译失败: ${error.data.message}`)
-    } else if (error.message) {
-      console.error('翻译错误:', error.message)
-      ElMessage.error(`内容翻译失败: ${error.message}`)
-    }
+    ElMessage.error(`内容翻译失败: ${error.message || '未知错误'}`)
   } finally {
     translating.value = false
   }
@@ -610,17 +597,11 @@ const loadArticleSummary = async () => {
   // 尝试从数据库加载
   loadingSummary.value = true
   try {
-    const response = await $fetch('/api/article/get-summary', {
-      method: 'POST',
-      body: {
-        articleId: selectedArticle.value.id
-      }
-    })
-
-    if ((response as any).success && (response as any).summary) {
-      articleSummary.value = (response as any).summary
+    const summary = await getArticleSummary(selectedArticle.value.id)
+    if (summary) {
+      articleSummary.value = summary
       // 更新本地文章对象
-      selectedArticle.value.ai_summary = articleSummary.value
+      selectedArticle.value.ai_summary = summary
     } else {
       articleSummary.value = null
     }
@@ -641,15 +622,10 @@ const generateSummary = async () => {
   generatingSummary.value = true
   loadingSummary.value = true
   try {
-    const response = await $fetch('/api/article/generate-summary', {
-      method: 'POST',
-      body: {
-        articleId: selectedArticle.value.id
-      }
-    })
+    const response = await generateArticleSummary(selectedArticle.value.id)
 
-    if ((response as any).success && (response as any).summary) {
-      articleSummary.value = (response as any).summary
+    if (response.success && response.summary) {
+      articleSummary.value = response.summary
       // 更新本地文章对象
       selectedArticle.value.ai_summary = articleSummary.value
       ElMessage.success('总结生成成功')
@@ -658,7 +634,7 @@ const generateSummary = async () => {
     }
   } catch (error: any) {
     console.error('生成总结失败:', error)
-    ElMessage.error(`生成总结失败: ${error.data?.message || error.message || '未知错误'}`)
+    ElMessage.error(`生成总结失败: ${error.message || '未知错误'}`)
   } finally {
     generatingSummary.value = false
     loadingSummary.value = false
