@@ -22,5 +22,12 @@ export default defineNuxtConfig({
   },
 
   ssr: false, // Tauri 需要客户端渲染
+
+  nitro: {
+    prerender: {
+      routes: ['/'],
+      crawlLinks: false
+    }
+  }
 })
 

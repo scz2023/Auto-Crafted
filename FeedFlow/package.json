@@ -11,7 +11,9 @@
     "postinstall": "nuxt prepare",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:portable": "node scripts/build-portable.js",
+    "tauri:build:portable:ps1": "powershell -ExecutionPolicy Bypass -File scripts/build-portable.ps1"
   },
   "dependencies": {
     "@element-plus/nuxt": "^1.1.4",
@@ -28,6 +30,7 @@
     "@tauri-apps/cli": "^2.9.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
+    "archiver": "^7.0.1",
     "typescript": "^5.9.3"
   }
 }
