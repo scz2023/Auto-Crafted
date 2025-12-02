@@ -1,0 +1,33 @@
+{
+  "name": "feedflow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@element-plus/nuxt": "^1.1.4",
+    "@pinia/nuxt": "^0.11.3",
+    "@tauri-apps/plugin-shell": "^2.3.3",
+    "better-sqlite3": "^12.4.6",
+    "element-plus": "^2.11.8",
+    "nuxt": "^4.2.1",
+    "pinia": "^3.0.4",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/cli": "^2.9.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

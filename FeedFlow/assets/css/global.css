@@ -1,0 +1,307 @@
+/* 全局样式 - 适配 Tauri 窗口 */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#__nuxt {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ============================================
+   主题系统 - 参考 Docus 实现
+   ============================================ */
+
+/* 浅色主题变量 */
+:root {
+  /* 字体 */
+  --article-font-size: 16px;
+  
+  /* 背景色 */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f7fa;
+  --bg-tertiary: #fafafa;
+  --bg-hover: #f5f7fa;
+  --bg-active: #ecf5ff;
+  --bg-card: #ffffff;
+  
+  /* 文字颜色 */
+  --text-primary: #303133;
+  --text-secondary: #606266;
+  --text-tertiary: #909399;
+  --text-disabled: #c0c4cc;
+  
+  /* 边框颜色 */
+  --border-primary: #e4e7ed;
+  --border-secondary: #ebeef5;
+  --border-tertiary: #f0f0f0;
+  
+  /* 主题色 */
+  --color-primary: #409eff;
+  --color-primary-hover: #66b1ff;
+  --color-primary-light: #ecf5ff;
+  --color-primary-dark: #2d4a5f;
+  
+  /* 滚动条 */
+  --scrollbar-track: #f1f1f1;
+  --scrollbar-thumb: #c1c1c1;
+  --scrollbar-thumb-hover: #a8a8a8;
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.12), 0 0 6px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* 深色主题变量 */
+html.dark {
+  color-scheme: dark;
+  
+  /* 背景色 */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #1a1a1a;
+  --bg-hover: #333333;
+  --bg-active: #2d4a5f;
+  --bg-card: #2a2a2a;
+  
+  /* 文字颜色 */
+  --text-primary: #e5e5e5;
+  --text-secondary: #d0d0d0;
+  --text-tertiary: #b0b0b0;
+  --text-disabled: #666666;
+  
+  /* 边框颜色 */
+  --border-primary: #333333;
+  --border-secondary: #444444;
+  --border-tertiary: #333333;
+  
+  /* 主题色 */
+  --color-primary: #409eff;
+  --color-primary-hover: #66b1ff;
+  --color-primary-light: #2d4a5f;
+  --color-primary-dark: #1e3a4f;
+  
+  /* 滚动条 */
+  --scrollbar-track: #2a2a2a;
+  --scrollbar-thumb: #555555;
+  --scrollbar-thumb-hover: #666666;
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 6px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 12px 0 rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+html.light {
+  color-scheme: light;
+}
+
+/* 应用主题色到根元素 */
+html {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ============================================
+   滚动条样式
+   ============================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ============================================
+   通用组件样式（使用 CSS 变量）
+   ============================================ */
+
+/* 侧边栏 */
+.sidebar,
+.articles-list,
+.article-content,
+.settings-menu,
+.settings-content {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+/* 卡片/容器 */
+.article-item,
+.feed-item,
+.content-wrapper,
+.detail-wrapper,
+.about-container {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.article-item:hover,
+.feed-item:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--color-primary);
+}
+
+.article-item.active,
+.feed-item.active {
+  background-color: var(--bg-active);
+  border-color: var(--color-primary);
+}
+
+/* 标题 */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-primary);
+}
+
+/* 链接 */
+a {
+  color: var(--color-primary);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* 分隔线 */
+hr,
+.el-divider {
+  border-color: var(--border-primary);
+}
+
+/* Element Plus 菜单深色主题适配 */
+html.dark .sidebar-menu,
+html.dark .settings-menu-list {
+  background-color: var(--bg-primary) !important;
+  border-color: var(--border-primary);
+}
+
+html.dark .sidebar-menu :deep(.el-menu-item),
+html.dark .settings-menu-list :deep(.el-menu-item) {
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+
+html.dark .sidebar-menu :deep(.el-menu-item:hover),
+html.dark .settings-menu-list :deep(.el-menu-item:hover) {
+  background-color: var(--bg-hover) !important;
+  color: var(--color-primary) !important;
+}
+
+html.dark .sidebar-menu :deep(.el-menu-item.is-active),
+html.dark .settings-menu-list :deep(.el-menu-item.is-active) {
+  background-color: var(--bg-active) !important;
+  color: var(--color-primary) !important;
+}
+
+html.dark .sidebar-menu :deep(.el-sub-menu__title),
+html.dark .settings-menu-list :deep(.el-sub-menu__title) {
+  color: var(--text-primary) !important;
+}
+
+html.dark .sidebar-menu :deep(.el-sub-menu__title:hover),
+html.dark .settings-menu-list :deep(.el-sub-menu__title:hover) {
+  background-color: var(--bg-hover) !important;
+  color: var(--color-primary) !important;
+}
+
+html.dark .sidebar-menu :deep(.el-menu-item:not(:last-child)),
+html.dark .sidebar-menu :deep(.el-sub-menu:not(:last-child)),
+html.dark .sidebar-menu :deep(.el-sub-menu) {
+  border-bottom-color: var(--border-primary) !important;
+}
+
+/* ============================================
+   Element Plus 输入框包装器样式
+   ============================================ */
+
+/* Element Plus 输入框包装器背景颜色 */
+:deep(.el-input__wrapper) {
+  background-color: var(--bg-primary) !important;
+  box-shadow: 0 0 0 1px var(--border-primary) inset !important;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+:deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--border-secondary) inset !important;
+}
+
+:deep(.el-input.is-focus .el-input__wrapper),
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--color-primary) inset !important;
+}
+
+:deep(.el-input.is-disabled .el-input__wrapper) {
+  background-color: var(--bg-secondary) !important;
+  box-shadow: 0 0 0 1px var(--border-tertiary) inset !important;
+}
+
+/* Element Plus 输入框内部文字颜色 */
+:deep(.el-input__inner) {
+  background-color: transparent !important;
+  color: var(--text-primary) !important;
+  transition: color 0.3s ease;
+}
+
+:deep(.el-input__inner::placeholder) {
+  color: var(--text-tertiary) !important;
+}
+
+/* Element Plus 文本域包装器 */
+:deep(.el-textarea__inner) {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-primary) !important;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+:deep(.el-textarea__inner:focus) {
+  border-color: var(--color-primary) !important;
+}
+
+:deep(.el-textarea__inner::placeholder) {
+  color: var(--text-tertiary) !important;
+}
+
+/* Element Plus 输入数字组件 */
+:deep(.el-input-number) {
+  background-color: transparent !important;
+}
+
+:deep(.el-input-number .el-input__wrapper) {
+  background-color: var(--bg-primary) !important;
+}
+
+/* Element Plus 选择器输入框包装器 */
+:deep(.el-select .el-input__wrapper) {
+  background-color: var(--bg-primary) !important;
+}
+
+:deep(.el-select.is-disabled .el-input__wrapper) {
+  background-color: var(--bg-secondary) !important;
+}
+

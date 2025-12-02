@@ -1,0 +1,8 @@
+node_modules
+.nuxt
+.output
+dist
+*.db
+*.db-shm
+*.db-wal
+
