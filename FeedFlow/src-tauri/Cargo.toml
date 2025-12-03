@@ -1,6 +1,6 @@
 [package]
 name = "feedflow"
-version = "1.0.0"
+version = "1.1.0"
 description = "RSS Reader Application"
 authors = ["you"]
 license = ""
@@ -18,6 +18,10 @@ serde_json = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["full"] }
+feed-rs = "2.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+quick-xml = { version = "0.31", features = ["serialize"] }
 
 [features]
 default = ["custom-protocol"]

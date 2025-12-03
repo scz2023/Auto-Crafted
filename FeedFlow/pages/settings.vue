@@ -540,7 +540,6 @@ import { useCategoryStore } from '~/stores/category'
 import { updateAutoRefreshSettings } from '~/composables/useAutoRefresh'
 import { useTheme } from '~/composables/useTheme'
 import { parseOpml } from '~/composables/useOpml'
-
 const settingsStore = useSettingsStore()
 const feedStore = useFeedStore()
 const categoryStore = useCategoryStore()
@@ -845,15 +844,54 @@ const importOpmlFromUrl = async () => {
   importing.value = true
   importSource.value = 'url'
   try {
-    // 通过服务器端 API 获取 OPML 内容（避免 CORS 问题）
-    const response = await $fetch('/api/opml/fetch', {
-      method: 'POST',
-      body: {
-        url: opmlImport.value.url
-      }
-    })
+    // 检查是否在 Tauri 环境中，优先使用 Rust 命令
+    const isTauriEnv = typeof window !== 'undefined' && (
+      (window as any).__TAURI__ !== undefined ||
+      (window as any).__TAURI_INTERNALS__ !== undefined ||
+      navigator.userAgent.includes('Tauri')
+    )
     
-    const text = (response as any).data
+    let text: string
+    
+    if (isTauriEnv) {
+      try {
+        console.log('[importOpmlFromUrl] 使用 Tauri 命令获取 OPML（Rust 实现）')
+        const { invoke } = await import('@tauri-apps/api/core')
+        text = await invoke('fetch_opml', { url: opmlImport.value.url }) as string
+        console.log('[importOpmlFromUrl] Tauri 命令获取成功')
+      } catch (tauriError: any) {
+        console.error('[importOpmlFromUrl] Tauri 命令失败，详细错误:', {
+          message: tauriError.message || tauriError,
+          error: tauriError,
+          stack: tauriError.stack,
+          toString: String(tauriError)
+        })
+        console.warn('[importOpmlFromUrl] 回退到 API 方式')
+        // 回退到 API 方式
+        try {
+          const response = await $fetch('/api/opml/fetch', {
+            method: 'POST',
+            body: {
+              url: opmlImport.value.url
+            }
+          })
+          text = (response as any).data
+        } catch (apiError: any) {
+          console.error('[importOpmlFromUrl] API 方式也失败:', apiError)
+          throw new Error(`获取 OPML 失败: ${tauriError?.message || tauriError || 'Tauri 命令失败'}。API 方式也失败: ${apiError?.data?.message || apiError?.message || '服务器错误'}`)
+        }
+      }
+    } else {
+      // 非 Tauri 环境，使用 API
+      const response = await $fetch('/api/opml/fetch', {
+        method: 'POST',
+        body: {
+          url: opmlImport.value.url
+        }
+      })
+      text = (response as any).data
+    }
+    
     await processOpmlImport(text)
     opmlImport.value.url = '' // 清空 URL
   } catch (error: any) {
@@ -890,55 +928,85 @@ const importOpmlFromFile = async () => {
 
 // 处理 OPML 导入的通用逻辑
 const processOpmlImport = async (opmlText: string) => {
-  const opmlData = parseOpml(opmlText)
+  // 检查是否在 Tauri 环境中，优先使用 Rust 解析
+  const isTauriEnv = typeof window !== 'undefined' && (
+    (window as any).__TAURI__ !== undefined ||
+    (window as any).__TAURI_INTERNALS__ !== undefined ||
+    navigator.userAgent.includes('Tauri')
+  )
+  
+  let opmlData: any
+  
+  if (isTauriEnv) {
+    try {
+      console.log('[processOpmlImport] 使用 Tauri 命令解析 OPML（Rust 实现）')
+      const { invoke } = await import('@tauri-apps/api/core')
+      // 注意：这里的参数名必须与 Rust 中的函数签名参数名一致（opmlText）
+      const result = await invoke('parse_opml', { opmlText: opmlText }) as any
+      
+      // 转换格式以匹配前端接口
+      opmlData = {
+        title: result.title || '',
+        feeds: result.feeds.map((f: any) => ({
+          title: f.title,
+          url: f.url,
+          description: f.description,
+          category: f.category,
+          htmlUrl: f.html_url
+        }))
+      }
+      console.log('[processOpmlImport] Tauri 命令解析成功，订阅数:', opmlData.feeds.length)
+    } catch (tauriError: any) {
+      console.error('[processOpmlImport] Tauri 命令解析失败:', tauriError)
+      ElMessage.error(`使用 Rust 解析 OPML 失败: ${tauriError?.message || String(tauriError)}`)
+      return
+    }
+  } else {
+    // 非 Tauri 环境，使用前端解析
+    try {
+      opmlData = parseOpml(opmlText)
+    } catch (e: any) {
+      console.error('[processOpmlImport] 前端解析 OPML 失败:', e)
+      ElMessage.error(`OPML 文件格式错误或不受支持: ${e?.message || String(e)}`)
+      return
+    }
+  }
 
   if (opmlData.feeds.length === 0) {
     ElMessage.warning('OPML 文件中没有找到订阅源')
     return
   }
 
+  // 将 OPML 中的订阅源导入到订阅源管理中，但默认标记为“未订阅”
   let successCount = 0
   let failCount = 0
+  const failedFeeds: Array<{ title: string, url: string, error: string }> = []
   const categoryMap = new Map<string, number>()
 
-  // 导入订阅源
-  const failedFeeds: Array<{ title: string, url: string, error: string }> = []
-  
   for (const feed of opmlData.feeds) {
     try {
-      // 处理分类
       let categoryId: number | null = null
       if (feed.category) {
-        // 检查分类是否已存在
+        // 分类按需创建/复用
         if (!categoryMap.has(feed.category)) {
           const categoryId_ = await categoryStore.createCategory(feed.category)
           categoryMap.set(feed.category, categoryId_)
           console.log(`创建分类: ${feed.category} (ID: ${categoryId_})`)
         }
         categoryId = categoryMap.get(feed.category)!
-        console.log(`订阅源 "${feed.title}" 将放入分类: ${feed.category} (ID: ${categoryId})`)
-      } else {
-        console.log(`订阅源 "${feed.title}" 没有分类，将作为未分类`)
       }
 
-      // 尝试添加订阅源（带分类）
-      try {
-        const feedId = await feedStore.addFeedWithCategory(feed.url, feed.title, categoryId, feed.description)
-        console.log(`成功添加订阅源 "${feed.title}" (ID: ${feedId}) 到分类 ID: ${categoryId}`)
-        successCount++
-      } catch (parseError: any) {
-        // 如果 RSS 解析失败，尝试仅保存订阅源信息（不解析内容）
-        try {
-          const feedId = await feedStore.addFeedWithCategory(feed.url, feed.title, categoryId, feed.description, true)
-          console.log(`订阅源 "${feed.title}" 解析失败，但已保存基本信息 (ID: ${feedId}) 到分类 ID: ${categoryId}`)
-          successCount++
-        } catch (saveError: any) {
-          // 如果保存也失败，记录错误
-          throw saveError
-        }
-      }
+      // 调用 feedStore 的导入方法：只创建记录，is_subscribed=0，不解析 RSS
+      const feedId = await feedStore.importFeedFromOpml(
+        feed.url,
+        feed.title,
+        categoryId,
+        feed.description
+      )
+      console.log(`已从 OPML 导入订阅源 "${feed.title}" (ID: ${feedId})，默认未订阅`)
+      successCount++
     } catch (error: any) {
-      console.error(`导入订阅源失败: ${feed.title} (${feed.url})`, error)
+      console.error(`从 OPML 导入订阅源失败: ${feed.title} (${feed.url})`, error)
       failCount++
       failedFeeds.push({
         title: feed.title || '未命名',
@@ -948,29 +1016,18 @@ const processOpmlImport = async (opmlText: string) => {
     }
   }
 
-  // 显示导入结果
-  if (failCount === 0) {
-    ElMessage.success(`导入完成：成功 ${successCount} 个`)
-  } else if (successCount === 0) {
-    ElMessage.error(`导入失败：所有 ${failCount} 个订阅源都导入失败`)
-  } else {
-    ElMessage.warning(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`)
-    // 如果有失败的，在控制台显示详细信息
-    if (failedFeeds.length > 0) {
-      console.group('导入失败的订阅源：')
-      failedFeeds.forEach(feed => {
-        console.warn(`${feed.title} (${feed.url}): ${feed.error}`)
-      })
-      console.groupEnd()
-    }
-  }
-  
-  // 刷新分类列表
+  // 刷新分类和订阅源列表，让“订阅源管理”里能看到这些记录
   await loadCategories()
-  
-  // 如果当前在订阅源管理页面，刷新订阅列表
   if (activeSetting.value === 'feeds') {
     await loadFeeds()
+  }
+
+  if (failCount === 0) {
+    ElMessage.success(`OPML 导入完成：成功导入 ${successCount} 个订阅源（默认未订阅）`)
+  } else if (successCount === 0) {
+    ElMessage.error(`OPML 导入失败：所有 ${failCount} 个订阅源都导入失败`)
+  } else {
+    ElMessage.warning(`OPML 导入完成：成功 ${successCount} 个，失败 ${failCount} 个`)
   }
 }
 

@@ -8,9 +8,9 @@ export const useFeedStore = defineStore('feed', {
   }),
 
   actions: {
+    // 仅返回已订阅的订阅源（用于阅读侧边栏等「已订阅」场景）
     async getAllFeeds() {
       const db = useDatabase()
-      // 只返回已订阅的订阅源（用于全部文章显示）
       const stmt = db.prepare(`
         SELECT 
           f.*,
@@ -18,6 +18,20 @@ export const useFeedStore = defineStore('feed', {
         FROM feeds f
         LEFT JOIN categories c ON f.category_id = c.id
         WHERE f.is_subscribed = 1
+        ORDER BY c.name, f.title
+      `)
+      return await stmt.all() as any[]
+    },
+
+    // 返回所有订阅源（包含未订阅），用于管理页面
+    async getAllFeedsWithStatus() {
+      const db = useDatabase()
+      const stmt = db.prepare(`
+        SELECT 
+          f.*,
+          c.name as categoryName
+        FROM feeds f
+        LEFT JOIN categories c ON f.category_id = c.id
         ORDER BY c.name, f.title
       `)
       return await stmt.all() as any[]
@@ -256,6 +270,49 @@ export const useFeedStore = defineStore('feed', {
       }
       
       return feedId
+    },
+
+    // 从 OPML 导入订阅源：只创建记录，不自动订阅、不解析 RSS
+    async importFeedFromOpml(url: string, title?: string, categoryId?: number | null, description?: string) {
+      const db = useDatabase()
+
+      // 检查是否已存在
+      const existingStmt = db.prepare('SELECT id, is_subscribed FROM feeds WHERE url = ?')
+      const existing = await existingStmt.get(url) as any
+      if (existing) {
+        // 如果已存在，只在未订阅且给了分类的情况下更新分类
+        if (!existing.is_subscribed && categoryId !== undefined && categoryId !== null) {
+          const update = db.prepare('UPDATE feeds SET category_id = ? WHERE id = ?')
+          await update.run(categoryId, existing.id)
+        }
+        return existing.id as number
+      }
+
+      // 尝试获取 favicon（仅根据 URL 推断，不请求网络）
+      let favicon: string | null = null
+      try {
+        const feedUrl = new URL(url)
+        favicon = `${feedUrl.protocol}//${feedUrl.host}/favicon.ico`
+      } catch {
+        // 忽略 favicon 获取错误
+      }
+
+      const insert = db.prepare(`
+        INSERT INTO feeds (title, url, description, favicon, category_id, is_subscribed, last_update)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+
+      const result = await insert.run(
+        title || '未命名订阅',
+        url,
+        description || '',
+        favicon,
+        categoryId || null,
+        0, // 从 OPML 导入的默认未订阅
+        null // 暂无最后更新时间
+      )
+
+      return result.lastInsertRowid as number
     },
 
     async updateFeed(id: number, data: any) {

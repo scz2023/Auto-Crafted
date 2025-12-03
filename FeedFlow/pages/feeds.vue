@@ -107,7 +107,8 @@ watch(() => route.query.add, (value) => {
 
 const loadFeeds = async () => {
   try {
-    feeds.value = await feedStore.getAllFeeds()
+    // 使用包含订阅状态的完整列表（已订阅 + 未订阅）
+    feeds.value = await feedStore.getAllFeedsWithStatus()
   } catch (error) {
     console.error('加载订阅失败:', error)
     ElMessage.error('加载订阅失败')

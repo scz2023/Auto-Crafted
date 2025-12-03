@@ -711,12 +711,40 @@ const fetchFullContent = async () => {
 
   loadingFullContent.value = true
   try {
-    const response = await $fetch('/api/article/fetch-full', {
-      method: 'POST',
-      body: {
-        url: selectedArticle.value.link
+    // 检查是否在 Tauri 环境中，优先使用 Rust 命令
+    const isTauriEnv = typeof window !== 'undefined' && (
+      (window as any).__TAURI__ !== undefined ||
+      (window as any).__TAURI_INTERNALS__ !== undefined ||
+      navigator.userAgent.includes('Tauri')
+    )
+    
+    let response: any
+    
+    if (isTauriEnv) {
+      try {
+        console.log('[fetchFullContent] 使用 Tauri 命令获取全文（Rust 实现）')
+        const { invoke } = await import('@tauri-apps/api/core')
+        response = await invoke('fetch_full_article', { url: selectedArticle.value.link }) as any
+        console.log('[fetchFullContent] Tauri 命令获取成功')
+      } catch (tauriError: any) {
+        console.warn('[fetchFullContent] Tauri 命令失败，回退到 API 方式:', tauriError.message)
+        // 回退到 API 方式
+        response = await $fetch('/api/article/fetch-full', {
+          method: 'POST',
+          body: {
+            url: selectedArticle.value.link
+          }
+        })
       }
-    })
+    } else {
+      // 非 Tauri 环境，使用 API
+      response = await $fetch('/api/article/fetch-full', {
+        method: 'POST',
+        body: {
+          url: selectedArticle.value.link
+        }
+      })
+    }
 
     if ((response as any).success && (response as any).content) {
       fullContent.value = (response as any).content

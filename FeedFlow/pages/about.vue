@@ -125,7 +125,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-const version = ref('1.0.0')
+const version = ref('1.1.0')
 const nuxtVersion = ref('4.2.1')
 const vueVersion = ref('3.5.23')
 const typescriptVersion = ref('5.9.3')
@@ -138,7 +138,7 @@ const rssParserVersion = ref('3.13.0')
 // 版本信息（从 package.json 同步）
 onMounted(() => {
   // 版本信息已从 package.json 同步设置
-  version.value = '1.0.0'
+  version.value = '1.1.0'
   nuxtVersion.value = '4.2.1'
   vueVersion.value = '3.5.23'
   typescriptVersion.value = '5.9.3'

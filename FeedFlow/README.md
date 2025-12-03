@@ -121,10 +121,10 @@ npm run build
 npm run tauri:dev
 ```
 
-## Tauri 构建
+## Tauri 构建 免安装便携版本
 
 ```bash
-npm run tauri:build
+tauri:build:portable:ps1
 ```
 
 ## 项目结构

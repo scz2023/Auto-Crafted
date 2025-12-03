@@ -34,17 +34,17 @@ try {
   process.exit(1);
 }
 
-// 3. 构建 Tauri 应用（即使 MSI 打包失败，release 版本也会生成）
+// 3. 构建 Tauri 应用（Release 模式，不打包成 MSI，只生成可执行文件）
 console.log('🔨 构建 Tauri 应用（Release 模式）...');
 try {
-  execSync('npm run tauri:build', { 
-    cwd: rootDir, 
+  execSync('cargo build --release', { 
+    cwd: tauriDir, 
     stdio: 'inherit',
     shell: true 
   });
 } catch (error) {
-  console.log('⚠️  Tauri 打包过程有错误，但检查 release 版本是否已生成...');
-  // 即使打包失败，release 版本可能已经生成，继续检查
+  console.log('⚠️  Tauri 构建过程有错误，但检查 release 版本是否已生成...');
+  // 即使构建失败，release 版本可能已经生成，继续检查
 }
 
 // 4. 检查 release 目录
@@ -89,14 +89,33 @@ filesToCopy.forEach(file => {
 
 // 8. 复制服务器端文件（.output/server 目录）
 const outputServerDir = join(rootDir, '.output', 'server');
-const portableServerDir = join(portableDir, '.output', 'server');
+const portableOutputDir = join(portableDir, '.output');
+const portableServerDir = join(portableOutputDir, 'server');
 if (existsSync(outputServerDir)) {
   console.log('📋 复制服务器端文件...');
-  mkdirSync(join(portableDir, '.output'), { recursive: true });
+  console.log(`  源目录: ${outputServerDir}`);
+  console.log(`  目标目录: ${portableServerDir}`);
+  
+  // 确保 .output 目录存在
+  if (!existsSync(portableOutputDir)) {
+    mkdirSync(portableOutputDir, { recursive: true });
+  }
+  
   cpSync(outputServerDir, portableServerDir, { recursive: true });
   console.log('  ✓ 服务器端文件已复制');
+  
+  // 验证复制是否成功
+  const serverIndex = join(portableServerDir, 'index.mjs');
+  if (existsSync(serverIndex)) {
+    console.log('  ✓ 服务器 index.mjs 已验证');
+  } else {
+    console.error('  ❌ 错误: 复制后未找到服务器 index.mjs!');
+    process.exit(1);
+  }
 } else {
-  console.warn('⚠️  警告: 服务器端目录不存在:', outputServerDir);
+  console.error('❌ 错误: 服务器端目录不存在:', outputServerDir);
+  console.error('请先运行 "npm run build" 生成服务器文件。');
+  process.exit(1);
 }
 
 // 9. 检查并复制资源文件（如果有）
@@ -135,6 +154,7 @@ const readmeContent = `# ${productName} 便携版
 
 - Windows 10/11
 - WebView2 Runtime（通常已预装，如未安装会自动下载）
+- Node.js（服务器端 API 需要）
 `;
 
 const readmePath = join(portableDir, 'README.txt');
