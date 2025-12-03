@@ -7,7 +7,7 @@
 *Where artificial intelligence meets software craftsmanship*
 
 [![License](https://img.shields.io/badge/license-Public%20Domain-blue.svg)](LICENSE)
-[![AI Generated](https://img.shields.io/badge/AI-Generated%20100%25-FF6B6B.svg)](https://github.com)
+[![AI Generated](https://img.shields.io/badge/AI%20Generated-%20100%25-FF6B6B.svg)](https://github.com)
 [![Open Source](https://img.shields.io/badge/Open%20Source-Yes-brightgreen.svg)](https://github.com)
 
 </div>
