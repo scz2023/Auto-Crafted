@@ -1,5 +1,4 @@
 import Parser from 'rss-parser'
-import { useDatabase } from '~/server/utils/database'
 
 /**
  * 转换 RSSHub 协议 URL 为标准 HTTP URL
@@ -79,21 +78,9 @@ export default defineEventHandler(async (event) => {
   url = normalizeRssUrl(url)
 
   // 获取超时设置（秒转毫秒）
-  let timeoutValue = timeout
-  if (!timeoutValue) {
-    const db = useDatabase()
-    const timeoutSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('refreshTimeout') as any
-    if (timeoutSetting) {
-      try {
-        const timeoutSeconds = JSON.parse(timeoutSetting.value)
-        timeoutValue = timeoutSeconds * 1000
-      } catch {
-        timeoutValue = 30000 // 默认30秒
-      }
-    } else {
-      timeoutValue = 30000 // 默认30秒
-    }
-  }
+  // 如果客户端没有提供 timeout，使用默认值
+  // 客户端应该已经从数据库读取设置并传递过来
+  let timeoutValue = timeout || 30000 // 默认30秒
 
   const parser = new Parser({
     timeout: timeoutValue,

@@ -11,11 +11,15 @@
     "postinstall": "nuxt prepare",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:portable": "node scripts/build-portable.js",
+    "tauri:build:portable:ps1": "powershell -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
+    "debug:run": "powershell -ExecutionPolicy Bypass -File scripts/run-debug.ps1"
   },
   "dependencies": {
     "@element-plus/nuxt": "^1.1.4",
     "@pinia/nuxt": "^0.11.3",
+    "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-shell": "^2.3.3",
     "better-sqlite3": "^12.4.6",
     "element-plus": "^2.11.8",
@@ -24,10 +28,10 @@
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
-    "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/cli": "^2.9.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
+    "archiver": "^7.0.1",
     "typescript": "^5.9.3"
   }
 }

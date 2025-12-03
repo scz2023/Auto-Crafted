@@ -703,6 +703,12 @@ const handleSettingSelect = (index: string) => {
 const loadFeeds = async () => {
   loading.value = true
   try {
+    console.log('[设置页面] 开始加载订阅源...', { 
+      categoryFilter: selectedCategoryFilter.value,
+      page: currentPage.value,
+      pageSize: pageSize.value 
+    })
+    
     // 根据筛选条件加载订阅源
     let categoryId: number | null | undefined = undefined
     if (selectedCategoryFilter.value === 'uncategorized') {
@@ -713,15 +719,24 @@ const loadFeeds = async () => {
     
     // 获取总数
     totalFeeds.value = await feedStore.getFeedsCount(categoryId)
+    console.log('[设置页面] 订阅源总数:', totalFeeds.value)
     
     // 计算偏移量
     const offset = (currentPage.value - 1) * pageSize.value
     
     // 加载分页数据
-    feeds.value = await feedStore.getAllFeedsForManagement(categoryId, pageSize.value, offset)
-  } catch (error) {
+    const result = await feedStore.getAllFeedsForManagement(categoryId, pageSize.value, offset)
+    console.log('[设置页面] 订阅源加载成功:', result)
+    feeds.value = result || []
+    if (feeds.value.length === 0 && totalFeeds.value > 0) {
+      console.warn('[设置页面] 订阅源列表为空，但总数不为0，可能是分页问题')
+    }
+  } catch (error: any) {
     console.error('加载订阅失败:', error)
-    ElMessage.error('加载订阅失败')
+    const errorMsg = error?.message || error?.toString() || '未知错误'
+    ElMessage.error(`加载订阅失败: ${errorMsg}`)
+    feeds.value = [] // 确保设置为空数组，避免显示错误
+    totalFeeds.value = 0
   } finally {
     loading.value = false
   }
@@ -757,10 +772,18 @@ const toggleSubscribe = async (feed: any) => {
 
 const loadCategories = async () => {
   try {
-    categories.value = await categoryStore.getAllCategories()
-  } catch (error) {
+    console.log('[设置页面] 开始加载分类...')
+    const result = await categoryStore.getAllCategories()
+    console.log('[设置页面] 分类加载成功:', result)
+    categories.value = result || []
+    if (categories.value.length === 0) {
+      console.warn('[设置页面] 分类列表为空')
+    }
+  } catch (error: any) {
     console.error('加载分类失败:', error)
-    ElMessage.error('加载分类失败')
+    const errorMsg = error?.message || error?.toString() || '未知错误'
+    ElMessage.error(`加载分类失败: ${errorMsg}`)
+    categories.value = [] // 确保设置为空数组，避免显示错误
   }
 }
 

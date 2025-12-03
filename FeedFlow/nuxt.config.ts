@@ -22,5 +22,36 @@ export default defineNuxtConfig({
   },
 
   ssr: false, // Tauri 需要客户端渲染
+
+  vite: {
+    optimizeDeps: {
+      include: ['@tauri-apps/api/core']
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: undefined // 确保 Tauri API 被正确打包
+        }
+      }
+    }
+  },
+
+  nitro: {
+    prerender: {
+      routes: ['/'],
+      crawlLinks: false
+    },
+    // 确保服务器端 API 在 Tauri 中可用
+    experimental: {
+      wasm: true
+    },
+    // 在 Tauri 环境中，需要确保服务器端代码能运行
+    storage: {
+      fs: {
+        driver: 'fs',
+        base: './.nitro/storage'
+      }
+    }
+  }
 })
 

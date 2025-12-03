@@ -330,6 +330,18 @@ const initFontSize = async () => {
 
 // 初始化应用
 onMounted(async () => {
+  // 在 Tauri 环境中，等待服务器启动
+  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+    try {
+      const { ensureServerReady } = await import('./composables/useServerReady')
+      await ensureServerReady()
+      console.log('服务器已就绪')
+    } catch (error: any) {
+      console.error('服务器启动失败:', error)
+      // 继续执行，但某些功能可能不可用
+    }
+  }
+  
   // 立即加载订阅源列表，确保菜单快速显示
   loadFeeds()
   

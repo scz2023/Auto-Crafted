@@ -11,10 +11,39 @@ export function useDatabase(): Database.Database {
 
   try {
     // 在服务器端使用
-    // 在 Nuxt 3 中，process.cwd() 应该指向项目根目录
-    const dbPath = join(process.cwd(), 'rss-reader.db')
+    // 在 Tauri 环境中，使用应用数据目录；在开发环境中，使用项目根目录
+    let dbPath: string
+    
+    // 检查是否在 Tauri 环境中
+    // 在服务器端，process.cwd() 在 Tauri 中可能指向 .output/server 目录
+    // 我们需要向上查找项目根目录或使用应用数据目录
+    const cwd = process.cwd()
+    const isInOutput = cwd.includes('.output') || cwd.includes('server')
+    
+    if (isInOutput || process.env.TAURI_PLATFORM) {
+      // 在 Tauri 生产环境中，使用应用数据目录
+      let appDataDir: string
+      if (process.platform === 'win32') {
+        appDataDir = process.env.APPDATA || 
+                    join(process.env.USERPROFILE || process.env.HOME || '', 'AppData', 'Roaming')
+      } else if (process.platform === 'darwin') {
+        appDataDir = join(process.env.HOME || '', 'Library', 'Application Support')
+      } else {
+        appDataDir = join(process.env.HOME || '', '.config')
+      }
+      dbPath = join(appDataDir, 'FeedFlow', 'rss-reader.db')
+    } else {
+      // 在开发环境中，使用项目根目录
+      // 如果 cwd 在 .output 目录中，向上查找项目根目录
+      let projectRoot = cwd
+      if (cwd.includes('.output')) {
+        projectRoot = join(cwd, '..', '..')
+      }
+      dbPath = join(projectRoot, 'rss-reader.db')
+    }
     
     console.log('Initializing database at:', dbPath)
+    console.log('Environment:', { cwd, platform: process.platform, isInOutput })
     
     // 检查数据库文件目录是否存在，如果不存在则创建
     const dbDir = dirname(dbPath)

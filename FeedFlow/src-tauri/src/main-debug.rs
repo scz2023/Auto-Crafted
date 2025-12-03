@@ -1,14 +1,13 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Debug version with console window enabled
+// Copy this to main.rs temporarily to see console output
 
 mod db;
 
 use db::get_connection;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::process::{Command, Child};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DbQuery {
@@ -78,8 +77,6 @@ async fn db_query(app: AppHandle, query: DbQuery) -> Result<serde_json::Value, S
         
         Ok(serde_json::json!({ "success": true, "data": results }))
     } else {
-        // 对于非 SELECT 语句，先尝试使用 execute
-        // 如果返回结果错误，则使用 query_map 处理
         let mut stmt = conn
             .prepare(&query.sql)
             .map_err(|e| format!("SQL 准备失败: {}", e))?;
@@ -105,60 +102,17 @@ async fn db_query(app: AppHandle, query: DbQuery) -> Result<serde_json::Value, S
             })
             .collect();
         
-        // 尝试使用 execute，如果失败且是因为返回了结果，则使用 query_map
-        match stmt.execute(rusqlite::params_from_iter(params.iter())) {
-            Ok(changes) => {
-                Ok(serde_json::json!({
-                    "success": true,
-                    "data": {
-                        "lastInsertRowid": conn.last_insert_rowid(),
-                        "changes": changes
-                    }
-                }))
+        let result = stmt
+            .execute(rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("执行失败: {}", e))?;
+        
+        Ok(serde_json::json!({
+            "success": true,
+            "data": {
+                "lastInsertRowid": conn.last_insert_rowid(),
+                "changes": result
             }
-            Err(e) => {
-                let error_msg = e.to_string();
-                if error_msg.contains("Execute returned results") {
-                    // 如果 execute 返回了结果错误，说明这个语句实际上返回了结果
-                    // 重新准备语句并使用 query_map
-                    let mut stmt2 = conn
-                        .prepare(&query.sql)
-                        .map_err(|e| format!("SQL 准备失败: {}", e))?;
-                    
-                    let rows = stmt2
-                        .query_map(
-                            rusqlite::params_from_iter(params.iter()),
-                            |row| {
-                                let mut map = serde_json::Map::new();
-                                for (i, name) in row.as_ref().column_names().iter().enumerate() {
-                                    let value: rusqlite::types::Value = row.get(i).unwrap_or(rusqlite::types::Value::Null);
-                                    let json_value = match value {
-                                        rusqlite::types::Value::Null => serde_json::Value::Null,
-                                        rusqlite::types::Value::Integer(i) => serde_json::Value::Number(i.into()),
-                                        rusqlite::types::Value::Real(f) => {
-                                            serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap())
-                                        }
-                                        rusqlite::types::Value::Text(s) => serde_json::Value::String(s),
-                                        rusqlite::types::Value::Blob(_) => serde_json::Value::String("BLOB".to_string()),
-                                    };
-                                    map.insert(name.to_string(), json_value);
-                                }
-                                Ok(serde_json::Value::Object(map))
-                            },
-                        )
-                        .map_err(|e| format!("查询执行失败: {}", e))?;
-                    
-                    let mut results = Vec::new();
-                    for row in rows {
-                        results.push(row.map_err(|e| format!("行解析失败: {}", e))?);
-                    }
-                    
-                    Ok(serde_json::json!({ "success": true, "data": results }))
-                } else {
-                    Err(format!("执行失败: {}", error_msg))
-                }
-            }
-        }
+        }))
     }
 }
 
@@ -181,44 +135,41 @@ fn start_nitro_server(app: &AppHandle) -> Result<Child, String> {
     }
     
     // 尝试多个可能的路径
-    let mut possible_paths: Vec<PathBuf> = vec![
+    let mut possible_paths = vec![
         // 便携版：服务器在 .output/server 目录（与 exe 同级）
         exe_dir.join(".output").join("server").join("index.mjs"),
+        // 便携版：服务器在 exe 所在目录的父目录
+        exe_dir.parent().map(|p| p.join(".output").join("server").join("index.mjs")),
     ];
-    
-    // 便携版：服务器在 exe 所在目录的父目录
-    if let Some(parent) = exe_dir.parent() {
-        possible_paths.push(parent.join(".output").join("server").join("index.mjs"));
-    }
     
     // 如果资源目录存在，也检查那里
     if let Some(ref res_dir) = resource_dir {
-        possible_paths.push(res_dir.join(".output").join("server").join("index.mjs"));
-        possible_paths.push(res_dir.join("server").join("index.mjs"));
+        possible_paths.push(Some(res_dir.join(".output").join("server").join("index.mjs")));
+        possible_paths.push(Some(res_dir.join("server").join("index.mjs")));
     }
     
     // 开发环境：在项目根目录
-    if let Some(parent) = exe_dir.parent() {
-        if let Some(grandparent) = parent.parent() {
-            possible_paths.push(grandparent.join(".output").join("server").join("index.mjs"));
-        }
-    }
+    possible_paths.push(
+        exe_dir.parent().map(|p| p.parent().map(|pp| pp.join(".output").join("server").join("index.mjs"))).flatten()
+    );
     
-    let mut server_dir: Option<PathBuf> = None;
-    let mut server_index: Option<PathBuf> = None;
+    let mut server_dir = None;
+    let mut server_index = None;
     let mut tried_paths = Vec::new();
     
-    for path in possible_paths {
-        tried_paths.push(path.clone());
-        if path.exists() {
-            println!("Found server at: {:?}", path);
-            server_index = Some(path.clone());
-            server_dir = path.parent().map(|p| p.to_path_buf());
-            break;
+    for path_opt in possible_paths {
+        if let Some(path) = path_opt {
+            tried_paths.push(path.clone());
+            if path.exists() {
+                println!("Found server at: {:?}", path);
+                server_index = Some(path.clone());
+                server_dir = path.parent().map(|p| p.to_path_buf());
+                break;
+            }
         }
     }
     
-    let (server_dir, server_index): (PathBuf, PathBuf) = match (server_dir, server_index) {
+    let (server_dir, server_index) = match (server_dir, server_index) {
         (Some(dir), Some(idx)) => (dir, idx),
         _ => {
             let error_msg = format!(
@@ -248,16 +199,8 @@ fn start_server_at(server_dir: &std::path::Path, server_index: &std::path::Path)
     let mut cmd = Command::new(node_cmd);
     cmd.arg(server_index)
        .current_dir(server_dir)
-       .stdout(std::process::Stdio::piped())  // 保留输出以便调试
+       .stdout(std::process::Stdio::piped())
        .stderr(std::process::Stdio::piped());
-    
-    // 在 Windows 上隐藏控制台窗口
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
     
     // 设置环境变量
     cmd.env("NODE_ENV", "production");
@@ -302,6 +245,27 @@ fn start_server_at(server_dir: &std::path::Path, server_index: &std::path::Path)
 }
 
 fn main() {
+    // 在 Windows 上分配控制台窗口（用于调试）
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        use winapi::um::consoleapi::AllocConsole;
+        use winapi::um::processenv::GetStdHandle;
+        use winapi::um::winbase::STD_OUTPUT_HANDLE;
+        use winapi::um::wincon::SetConsoleTitleA;
+        
+        unsafe {
+            AllocConsole();
+            let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+            let mut handle = std::io::BufWriter::new(std::fs::File::from_raw_handle(std::io::RawHandle::from_raw_handle(stdout as *mut _)));
+            std::io::stdout().flush().unwrap();
+        }
+        
+        unsafe {
+            SetConsoleTitleA(b"FeedFlow Debug Console\0".as_ptr() as *const i8);
+        }
+    }
+    
     let server_process: ServerProcess = Arc::new(Mutex::new(None));
     let server_process_clone = server_process.clone();
     
@@ -309,23 +273,6 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![db_query])
         .setup(move |app| {
-            // 启用开发者工具（即使在 release 模式下也启用，以便调试）
-            // 尝试获取主窗口，如果没有 label，则获取第一个窗口
-            let window = app.get_webview_window("main")
-                .or_else(|| {
-                    // 如果没有找到 "main" 窗口，尝试获取第一个窗口
-                    app.webview_windows().values().next().cloned()
-                });
-            
-            if let Some(window) = window {
-                #[cfg(debug_assertions)]
-                {
-                    let _ = window.open_devtools();
-                }
-                // 在 release 模式下，F12 快捷键应该已经通过配置文件中的 devtools: true 启用
-                // 如果仍然不工作，可能需要检查 capabilities 配置
-            }
-            
             // 应用启动时启动服务器
             println!("Attempting to start Nitro server...");
             match start_nitro_server(app.handle()) {
@@ -355,7 +302,7 @@ fn main() {
                 if let Ok(mut process) = server_process_clone.lock() {
                     if let Some(mut child) = process.take() {
                         let _ = child.kill();
-                        println!("Nitro 服务器已停止");
+                        println!("Nitro server stopped");
                     }
                 }
             }
