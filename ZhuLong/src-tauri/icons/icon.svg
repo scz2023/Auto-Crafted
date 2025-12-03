@@ -1,0 +1,94 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#16213e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f3460;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="dragonGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff6b6b;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#ee5a6f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c44569;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="flameGradient" cx="50%" cy="50%">
+      <stop offset="0%" style="stop-color:#ffd93d;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#ff6b6b;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#c44569;stop-opacity:0.6" />
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="strongGlow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- 背景 -->
+  <rect width="1024" height="1024" rx="180" fill="url(#bgGradient)"/>
+  
+  <!-- 装饰性背景圆圈 -->
+  <circle cx="512" cy="512" r="450" fill="none" stroke="#16213e" stroke-width="2" opacity="0.3"/>
+  <circle cx="512" cy="512" r="380" fill="none" stroke="#16213e" stroke-width="1" opacity="0.2"/>
+  
+  <!-- 烛龙主体 -->
+  <g transform="translate(512, 512)">
+    <!-- 龙身（S形曲线） -->
+    <path d="M -200,-150 Q -150,-180 -100,-170 T 0,-160 T 100,-140 T 180,-120 T 220,-80" 
+          stroke="url(#dragonGradient)" 
+          stroke-width="50" 
+          fill="none" 
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          filter="url(#glow)"/>
+    
+    <!-- 龙头 -->
+    <ellipse cx="-200" cy="-150" rx="70" ry="60" fill="url(#dragonGradient)" filter="url(#glow)"/>
+    
+    <!-- 龙眼 -->
+    <circle cx="-220" cy="-160" r="15" fill="#fff" opacity="0.95"/>
+    <circle cx="-180" cy="-160" r="15" fill="#fff" opacity="0.95"/>
+    <circle cx="-220" cy="-160" r="8" fill="#1a1a2e"/>
+    <circle cx="-180" cy="-160" r="8" fill="#1a1a2e"/>
+    
+    <!-- 龙角（更明显） -->
+    <path d="M -240,-180 L -260,-220 L -250,-210 Z" fill="url(#dragonGradient)" filter="url(#glow)"/>
+    <path d="M -160,-180 L -140,-220 L -150,-210 Z" fill="url(#dragonGradient)" filter="url(#glow)"/>
+    
+    <!-- 龙须 -->
+    <path d="M -240,-140 Q -260,-130 -270,-120" stroke="url(#dragonGradient)" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M -160,-140 Q -140,-130 -130,-120" stroke="url(#dragonGradient)" stroke-width="8" fill="none" stroke-linecap="round"/>
+    
+    <!-- 火焰/烛光效果（右侧） -->
+    <circle cx="220" cy="-80" r="40" fill="url(#flameGradient)" filter="url(#strongGlow)" opacity="0.9"/>
+    <circle cx="220" cy="-80" r="25" fill="#ffd93d" opacity="0.95"/>
+    <circle cx="220" cy="-80" r="15" fill="#fff" opacity="0.8"/>
+    
+    <!-- 火焰粒子效果 -->
+    <circle cx="200" cy="-100" r="8" fill="#ffd93d" opacity="0.7" filter="url(#glow)"/>
+    <circle cx="240" cy="-100" r="8" fill="#ffd93d" opacity="0.7" filter="url(#glow)"/>
+    <circle cx="210" cy="-60" r="6" fill="#ff6b6b" opacity="0.6" filter="url(#glow)"/>
+    <circle cx="230" cy="-60" r="6" fill="#ff6b6b" opacity="0.6" filter="url(#glow)"/>
+    
+    <!-- 龙鳞装饰 -->
+    <circle cx="-50" cy="-160" r="12" fill="url(#dragonGradient)" opacity="0.6"/>
+    <circle cx="50" cy="-140" r="12" fill="url(#dragonGradient)" opacity="0.6"/>
+    <circle cx="150" cy="-120" r="12" fill="url(#dragonGradient)" opacity="0.6"/>
+  </g>
+  
+  <!-- 底部文字标识 -->
+  <text x="512" y="880" font-family="'Microsoft YaHei', 'SimHei', Arial, sans-serif" 
+        font-size="72" font-weight="bold" 
+        fill="#fff" text-anchor="middle" opacity="0.9">烛龙</text>
+  <text x="512" y="950" font-family="Arial, sans-serif" 
+        font-size="32" 
+        fill="#ffd93d" text-anchor="middle" opacity="0.7">ZhuLong</text>
+</svg>
+
