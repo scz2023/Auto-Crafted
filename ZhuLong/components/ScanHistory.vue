@@ -4,10 +4,16 @@
       <template #header>
         <div class="card-header">
           <span>扫描历史</span>
-          <el-button @click="refreshScans" :loading="loading">
-            <el-icon><Refresh /></el-icon>
-            刷新
-          </el-button>
+          <div class="header-actions">
+            <el-button @click="refreshScans" :loading="loading">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+            <el-button @click="handleClearAll" type="danger" :disabled="scans.length === 0">
+              <el-icon><Delete /></el-icon>
+              清空历史
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -27,7 +33,7 @@
         </el-table-column>
         <el-table-column prop="message" label="消息" />
         <el-table-column prop="createdAt" label="创建时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button
               size="small"
@@ -50,6 +56,14 @@
               :disabled="row.status !== 'running'"
             >
               停止
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              @click="handleDeleteScan(row.id)"
+              :disabled="row.status === 'running'"
+            >
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -115,8 +129,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh, Delete } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 
 const emit = defineEmits(['scan-selected'])
@@ -215,6 +229,50 @@ const viewVulnDetail = (vuln: any) => {
   )
 }
 
+const handleDeleteScan = async (scanId: number) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这条扫描记录吗？删除后将无法恢复。',
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await invoke('delete_scan', { scanId })
+    ElMessage.success('删除成功')
+    await refreshScans()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(`删除失败: ${error.message || error}`)
+    }
+  }
+}
+
+const handleClearAll = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清空所有扫描历史吗？此操作不可恢复。',
+      '确认清空',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await invoke('clear_all_scans')
+    ElMessage.success('已清空所有扫描历史')
+    await refreshScans()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(`清空失败: ${error.message || error}`)
+    }
+  }
+}
+
 // 定时刷新运行中的扫描
 let refreshInterval: NodeJS.Timeout | null = null
 
@@ -271,6 +329,11 @@ onUnmounted(() => {
   font-size: 18px;
   font-weight: 600;
   color: var(--text-primary, #000000);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .result-content {

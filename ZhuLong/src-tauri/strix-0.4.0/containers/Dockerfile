@@ -1,6 +1,25 @@
-FROM kalilinux/kali-rolling:latest
+# 支持通过构建参数指定镜像源（例如：docker.1ms.run）
+# 使用方式：docker build --build-arg DOCKER_REGISTRY_MIRROR=docker.1ms.run ...
+ARG DOCKER_REGISTRY_MIRROR=docker.1ms.run
+# 如果指定了镜像源，使用镜像源；否则使用默认源
+FROM ${DOCKER_REGISTRY_MIRROR}/kalilinux/kali-rolling:latest
 
 LABEL description="AI Agent Penetration Testing Environment with Comprehensive Automated Tools"
+
+# 配置 Kali Linux 使用国内镜像源（中科大镜像）
+# 先使用默认源更新 CA 证书，然后切换到国内镜像源
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates
+
+# 配置镜像源（使用 HTTP 避免 SSL 证书问题）
+RUN if [ -f /etc/apt/sources.list.d/kali.sources.list ]; then \
+        sed -i 's|http://kali.download/kali|http://mirrors.ustc.edu.cn/kali|g' /etc/apt/sources.list.d/kali.sources.list && \
+        sed -i 's|https://kali.download/kali|http://mirrors.ustc.edu.cn/kali|g' /etc/apt/sources.list.d/kali.sources.list; \
+    else \
+        echo "deb http://mirrors.ustc.edu.cn/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
+        echo "deb-src http://mirrors.ustc.edu.cn/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list; \
+    fi
 
 RUN apt-get update && \
     apt-get install -y kali-archive-keyring sudo && \
@@ -40,7 +59,7 @@ RUN apt-get update && \
     gdb \
     tmux \
     libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libatspi2.0-0 \
-    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libpango-1.0-0 libcairo2 libasound2 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libpango-1.0-0 libcairo2 libasound2t64 \
     fonts-unifont fonts-noto-color-emoji fonts-freefont-ttf fonts-dejavu-core ttf-bitstream-vera \
     libnss3-tools
 

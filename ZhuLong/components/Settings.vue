@@ -43,7 +43,22 @@
         <el-form-item>
           <el-button type="primary" @click="saveSettings" :loading="saving">保存设置</el-button>
           <el-button @click="loadSettings">重新加载</el-button>
+          <el-button type="success" @click="testLlmConnection" :loading="testing">测试连接</el-button>
         </el-form-item>
+        
+        <!-- 测试结果 -->
+        <el-alert
+          v-if="testResult"
+          :type="testResult.type"
+          :title="testResult.title"
+          :closable="true"
+          @close="testResult = null"
+          style="margin-top: 16px"
+        >
+          <template #default>
+            <pre class="test-result">{{ testResult.message }}</pre>
+          </template>
+        </el-alert>
       </el-form>
     </el-card>
   </div>
@@ -56,6 +71,8 @@ import { invoke } from '@tauri-apps/api/core'
 
 const formRef = ref()
 const saving = ref(false)
+const testing = ref(false)
+const testResult = ref<{ type: 'success' | 'error'; title: string; message: string } | null>(null)
 
 const settings = ref({
   defaultLlmProvider: 'openai/gpt-5',
@@ -141,6 +158,41 @@ const saveSettings = async () => {
   }
 }
 
+const testLlmConnection = async () => {
+  if (!settings.value.llmApiKey) {
+    ElMessage.warning('请先输入 API Key')
+    return
+  }
+  
+  testing.value = true
+  testResult.value = null
+  
+  try {
+    const result = await invoke<string>('test_llm_connection', {
+      llmProvider: settings.value.defaultLlmProvider,
+      llmApiKey: settings.value.llmApiKey,
+      llmApiBase: settings.value.llmApiBase || null,
+    })
+    
+    testResult.value = {
+      type: 'success',
+      title: 'LLM 连接测试成功',
+      message: result,
+    }
+    ElMessage.success('LLM 连接测试成功')
+  } catch (error: any) {
+    const errorMessage = error?.message || error?.toString() || String(error) || '未知错误'
+    testResult.value = {
+      type: 'error',
+      title: 'LLM 连接测试失败',
+      message: errorMessage,
+    }
+    ElMessage.error(`LLM 连接测试失败: ${errorMessage}`)
+  } finally {
+    testing.value = false
+  }
+}
+
 // 页面加载时自动加载设置
 onMounted(() => {
   loadSettings()
@@ -163,5 +215,18 @@ onMounted(() => {
   margin-left: 12px;
   font-size: 12px;
   color: var(--text-secondary, #666666);
+}
+
+.test-result {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 12px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>

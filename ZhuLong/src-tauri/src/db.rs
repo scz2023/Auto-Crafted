@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ScanRecord {
     pub id: i64,
     pub run_name: String,
@@ -404,5 +405,23 @@ pub fn get_all_settings(app: &AppHandle) -> SqlResult<std::collections::HashMap<
     }
     
     Ok(settings)
+}
+
+pub fn delete_scan(app: &AppHandle, scan_id: i64) -> SqlResult<()> {
+    let conn = get_connection(app)?;
+    
+    // 由于外键约束设置了 ON DELETE CASCADE，删除扫描会自动删除相关的漏洞和日志
+    conn.execute("DELETE FROM scans WHERE id = ?1", params![scan_id])?;
+    
+    Ok(())
+}
+
+pub fn clear_all_scans(app: &AppHandle) -> SqlResult<()> {
+    let conn = get_connection(app)?;
+    
+    // 删除所有扫描（由于外键约束，会自动删除相关的漏洞和日志）
+    conn.execute("DELETE FROM scans", [])?;
+    
+    Ok(())
 }
 

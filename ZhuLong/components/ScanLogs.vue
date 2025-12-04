@@ -7,6 +7,45 @@
       </div>
     </template>
     
+    <!-- 扫描状态信息 -->
+    <div v-if="scanStatus" class="scan-status-info">
+      <el-alert
+        v-if="scanStatus.status === 'failed'"
+        type="error"
+        :title="`扫描失败: ${scanStatus.message}`"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <div class="error-details">
+            <p><strong>失败原因：</strong></p>
+            <pre class="error-message">{{ scanStatus.message }}</pre>
+          </div>
+        </template>
+      </el-alert>
+      <el-alert
+        v-else-if="scanStatus.status === 'running'"
+        type="info"
+        :title="`扫描进行中... ${Math.round(scanStatus.progress)}%`"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-else-if="scanStatus.status === 'completed'"
+        type="success"
+        title="扫描已完成"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-else-if="scanStatus.status === 'stopped'"
+        type="warning"
+        :title="`扫描已停止: ${scanStatus.message}`"
+        :closable="false"
+        show-icon
+      />
+    </div>
+    
     <div class="logs-container" ref="logsContainer">
       <div
         v-for="(log, index) in logs"
@@ -35,7 +74,9 @@ const props = defineProps<{
 
 const logs = ref<Array<{ time: string; level: string; message: string }>>([])
 const logsContainer = ref<HTMLElement | null>(null)
+const scanStatus = ref<{ status: string; message: string; progress: number } | null>(null)
 let unsubscribe: (() => void) | null = null
+let statusInterval: NodeJS.Timeout | null = null
 
 const clearLogs = () => {
   logs.value = []
@@ -76,11 +117,35 @@ const loadLogs = async () => {
   }
 }
 
+const loadScanStatus = async () => {
+  if (!props.scanId) {
+    scanStatus.value = null
+    return
+  }
+  
+  try {
+    const status = await invoke<{ status: string; message: string; progress: number }>('get_scan_status', { 
+      scanId: props.scanId 
+    })
+    scanStatus.value = status
+  } catch (error: any) {
+    console.error('加载扫描状态失败:', error)
+  }
+}
+
 // 监听实时日志事件
 onMounted(async () => {
   if (props.scanId) {
     await loadLogs()
+    await loadScanStatus()
   }
+  
+  // 定期刷新扫描状态
+  statusInterval = setInterval(() => {
+    if (props.scanId) {
+      loadScanStatus()
+    }
+  }, 2000)
   
   // 监听 Tauri 事件
   try {
@@ -95,6 +160,10 @@ onMounted(async () => {
           message: payload.message
         })
         scrollToBottom()
+        // 如果是错误日志，刷新状态
+        if (payload.level === 'error') {
+          loadScanStatus()
+        }
       }
     })
   } catch (error) {
@@ -106,14 +175,19 @@ onUnmounted(() => {
   if (unsubscribe) {
     unsubscribe()
   }
+  if (statusInterval) {
+    clearInterval(statusInterval)
+  }
 })
 
 // 当 scanId 变化时重新加载日志
 watch(() => props.scanId, async (newId) => {
   if (newId) {
     await loadLogs()
+    await loadScanStatus()
   } else {
     logs.value = []
+    scanStatus.value = null
   }
 })
 </script>
@@ -210,6 +284,32 @@ watch(() => props.scanId, async (newId) => {
   text-align: center;
   color: var(--text-tertiary, #666);
   padding: 20px;
+}
+
+.scan-status-info {
+  margin-bottom: 16px;
+}
+
+.error-details {
+  margin-top: 8px;
+}
+
+.error-details p {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+.error-message {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 12px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
 }
 </style>
 

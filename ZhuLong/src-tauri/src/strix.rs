@@ -16,25 +16,16 @@ pub async fn run_scan(
     config: ScanConfig,
     processes: ScanProcesses,
 ) -> Result<(), String> {
-    // 获取 Strix 路径
-    let strix_path = get_strix_path(app)?;
-    let strix_dir = strix_path.parent()
-        .ok_or("无法获取 Strix 目录")?
-        .parent()
-        .ok_or("无法获取 Strix 根目录")?
-        .to_path_buf();
+    // 获取 Strix 路径（用于验证，但使用 Docker 时不需要）
+    let _strix_path = get_strix_path(app)?;
     
-    // 设置环境变量
-    let mut env = std::env::vars().collect::<HashMap<_, _>>();
-    env.insert("STRIX_LLM".to_string(), config.llm_provider.clone());
-    env.insert("LLM_API_KEY".to_string(), config.llm_api_key.clone());
-    
-    if let Some(base) = config.llm_api_base {
-        env.insert("LLM_API_BASE".to_string(), base);
-    }
+    // 设置环境变量（不再需要，因为使用 Docker 时通过 -e 传递）
+    // 保留这部分代码以防将来需要，但不使用 config.llm_api_base，避免移动
+    let _env = std::env::vars().collect::<HashMap<_, _>>();
     
     // 构建命令行参数
-    let mut args = vec!["strix_main".to_string(), "--target".to_string()];
+    // sys.argv[0] 应该是脚本文件名，后续参数才是真正的命令行参数
+    let mut args = vec!["--target".to_string()];
     for target in &config.targets {
         args.push(target.clone());
     }
@@ -61,30 +52,60 @@ pub async fn run_scan(
     db::update_scan_status(app, scan_id, "running", "扫描进行中...").await
         .map_err(|e| format!("更新扫描状态失败: {}", e))?;
     
-    // 尝试使用嵌入的 Python，如果失败则回退到系统 Python
-    let use_embedded = std::env::var("USE_EMBEDDED_PYTHON")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
+    // 使用 Docker 执行 Strix
+    // 查找 Strix 镜像（可能的名称）
+    let image_names = vec![
+        "strix:0.4.0",
+        "strix-agent:0.4.0",
+        "usestrix/strix:0.4.0",
+        "strix:latest",
+    ];
     
-    if use_embedded {
-        // 使用嵌入的 Python 解释器（不使用进程管理）
-        return run_with_embedded_python(
-            app,
-            scan_id,
-            strix_path,
-            strix_dir,
-            args,
-            env,
-            processes.clone(),
-        ).await;
+    let mut strix_image = None;
+    for image_name in &image_names {
+        let output = Command::new("docker")
+            .arg("images")
+            .arg("--format")
+            .arg("{{.Repository}}:{{.Tag}}")
+            .output()
+            .await;
+        
+        if let Ok(output) = output {
+            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                if stdout.lines().any(|line| line.trim() == *image_name) {
+                    strix_image = Some(image_name.to_string());
+                    break;
+                }
+            }
+        }
     }
     
-    // 使用 Python（优先打包的，回退到系统）
-    let python_cmd = get_python_executable(app)?;
+    let image_name = strix_image.ok_or_else(|| {
+        "未找到 Strix Docker 镜像。请运行: cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 .".to_string()
+    })?;
     
-    let mut cmd = Command::new(&python_cmd);
-    cmd.arg(&strix_path)
+    // 构建 Docker 命令
+    let workspace_dir_str = workspace_dir.to_string_lossy().replace('\\', "/");
+    
+    let mut cmd = Command::new("docker");
+    cmd.arg("run")
+        .arg("--rm")
+        .arg("-i")  // 交互模式，保持 stdin 打开
+        .arg("-v")
+        .arg(format!("{}:/workspace", workspace_dir_str))
+        .arg("-e")
+        .arg(format!("STRIX_LLM={}", config.llm_provider))
+        .arg("-e")
+        .arg(format!("LLM_API_KEY={}", config.llm_api_key));
+    
+    if let Some(base) = &config.llm_api_base {
+        if !base.is_empty() {
+            cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+        }
+    }
+    
+    cmd.arg(&image_name)
+        .arg("strix")
         .arg("--target");
     
     for target in &config.targets {
@@ -103,10 +124,8 @@ pub async fn run_scan(
         cmd.arg("--non-interactive");
     }
     
-    cmd.envs(&env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .current_dir(&workspace_dir);
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     
     // 启动进程
     let mut child = cmd.spawn().map_err(|e| format!("启动 Strix 失败: {}", e))?;
@@ -257,7 +276,7 @@ pub async fn stop_scan(
 }
 
 fn get_strix_path(app: &AppHandle) -> Result<PathBuf, String> {
-    // 尝试从资源目录获取
+    // 尝试从资源目录获取（打包后）
     if let Ok(resource_dir) = app.path().resource_dir() {
         let strix_main = resource_dir
             .join("strix-0.4.0")
@@ -270,21 +289,82 @@ fn get_strix_path(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
     
-    // 尝试从项目目录获取（开发环境）
-    let project_dir = std::env::current_dir()
-        .map_err(|_| "无法获取当前目录")?;
-    
-    let strix_main = project_dir
-        .join("strix-0.4.0")
-        .join("strix")
-        .join("interface")
-        .join("main.py");
-    
-    if strix_main.exists() {
-        return Ok(strix_main);
+    // 尝试从当前目录获取（开发环境）
+    if let Ok(current_dir) = std::env::current_dir() {
+        // 优先：如果当前目录是 src-tauri，直接查找 strix-0.4.0
+        if current_dir.ends_with("src-tauri") {
+            let strix_main = current_dir
+                .join("strix-0.4.0")
+                .join("strix")
+                .join("interface")
+                .join("main.py");
+            
+            if strix_main.exists() {
+                return Ok(strix_main);
+            }
+        }
+        
+        // 检查当前目录（可能是项目根目录）
+        let strix_main = current_dir
+            .join("strix-0.4.0")
+            .join("strix")
+            .join("interface")
+            .join("main.py");
+        
+        if strix_main.exists() {
+            return Ok(strix_main);
+        }
+        
+        // 如果当前目录是 src-tauri，尝试父目录（向后兼容）
+        if current_dir.ends_with("src-tauri") {
+            if let Some(parent) = current_dir.parent() {
+                let strix_main = parent
+                    .join("strix-0.4.0")
+                    .join("strix")
+                    .join("interface")
+                    .join("main.py");
+                
+                if strix_main.exists() {
+                    return Ok(strix_main);
+                }
+            }
+        }
+        
+        // 尝试向上查找项目根目录（查找包含 strix-0.4.0 的目录）
+        let mut search_dir = current_dir.clone();
+        for _ in 0..5 {
+            // 检查当前层级
+            let strix_main = search_dir
+                .join("strix-0.4.0")
+                .join("strix")
+                .join("interface")
+                .join("main.py");
+            
+            if strix_main.exists() {
+                return Ok(strix_main);
+            }
+            
+            // 检查 src-tauri 子目录
+            let strix_main = search_dir
+                .join("src-tauri")
+                .join("strix-0.4.0")
+                .join("strix")
+                .join("interface")
+                .join("main.py");
+            
+            if strix_main.exists() {
+                return Ok(strix_main);
+            }
+            
+            if let Some(parent) = search_dir.parent() {
+                search_dir = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
     }
     
-    Err("Strix 主程序未找到，请确保 strix-0.4.0 目录存在".to_string())
+    Err("Strix 主程序未找到，请确保 strix-0.4.0 目录存在于 src-tauri 或项目根目录".to_string())
 }
 
 fn get_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -295,6 +375,8 @@ fn get_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// 获取打包的 Python 解释器路径
+/// 已废弃：使用 Docker 方式，不再需要
+#[allow(dead_code)]
 fn get_bundled_python(app: &AppHandle) -> Option<PathBuf> {
     // 尝试从资源目录获取（打包后）
     if let Ok(resource_dir) = app.path().resource_dir() {
@@ -309,14 +391,48 @@ fn get_bundled_python(app: &AppHandle) -> Option<PathBuf> {
     }
     
     // 尝试从项目目录获取（开发环境）
-    if let Ok(project_dir) = std::env::current_dir() {
+    if let Ok(current_dir) = std::env::current_dir() {
+        // 检查当前目录
         #[cfg(target_os = "windows")]
-        let python_exe = project_dir.join("python-runtime").join("python").join("python.exe");
+        let python_exe = current_dir.join("python-runtime").join("python").join("python.exe");
         #[cfg(not(target_os = "windows"))]
-        let python_exe = project_dir.join("python-runtime").join("python").join("python3");
+        let python_exe = current_dir.join("python-runtime").join("python").join("python3");
         
         if python_exe.exists() {
             return Some(python_exe);
+        }
+        
+        // 如果当前目录是 src-tauri，尝试父目录
+        if current_dir.ends_with("src-tauri") {
+            if let Some(parent) = current_dir.parent() {
+                #[cfg(target_os = "windows")]
+                let python_exe = parent.join("python-runtime").join("python").join("python.exe");
+                #[cfg(not(target_os = "windows"))]
+                let python_exe = parent.join("python-runtime").join("python").join("python3");
+                
+                if python_exe.exists() {
+                    return Some(python_exe);
+                }
+            }
+        }
+        
+        // 尝试向上查找项目根目录（查找包含 python-runtime 的目录）
+        let mut search_dir = current_dir.clone();
+        for _ in 0..5 {
+            #[cfg(target_os = "windows")]
+            let python_exe = search_dir.join("python-runtime").join("python").join("python.exe");
+            #[cfg(not(target_os = "windows"))]
+            let python_exe = search_dir.join("python-runtime").join("python").join("python3");
+            
+            if python_exe.exists() {
+                return Some(python_exe);
+            }
+            
+            if let Some(parent) = search_dir.parent() {
+                search_dir = parent.to_path_buf();
+            } else {
+                break;
+            }
         }
     }
     
@@ -324,6 +440,8 @@ fn get_bundled_python(app: &AppHandle) -> Option<PathBuf> {
 }
 
 /// 获取 Python 解释器路径（优先级：打包的 Python > 系统 Python）
+/// 已废弃：使用 Docker 方式，不再需要
+#[allow(dead_code)]
 fn get_python_executable(app: &AppHandle) -> Result<String, String> {
     // 1. 优先使用打包的 Python
     if let Some(bundled_python) = get_bundled_python(app) {
@@ -539,6 +657,8 @@ fn parse_markdown_report(md: &str) -> Result<Vec<crate::Vulnerability>, String> 
 }
 
 /// 使用嵌入的 Python 解释器运行扫描
+/// 已废弃：使用 Docker 方式，不再需要
+#[allow(dead_code)]
 async fn run_with_embedded_python(
     app: &AppHandle,
     scan_id: i64,
@@ -556,11 +676,19 @@ async fn run_with_embedded_python(
     let app_clone = app.clone();
     let scan_id_clone = scan_id;
     
+    // 获取工作目录
+    let workspace_dir = get_workspace_dir(app)?;
+    std::fs::create_dir_all(&workspace_dir)
+        .map_err(|e| format!("创建工作目录失败: {}", e))?;
+    
+    let workspace_dir_clone = workspace_dir.clone();
+    
     tokio::spawn(async move {
         // 运行 Python 代码并捕获输出
         match python_embed::run_strix_with_embedded_python(
             strix_path.clone(),
             strix_dir.clone(),
+            workspace_dir_clone,
             args,
             env,
         ).await {
@@ -594,7 +722,15 @@ async fn run_with_embedded_python(
                 if exit_code == 0 {
                     let _ = db::update_scan_status(&app_clone, scan_id_clone, "completed", "扫描完成").await;
                 } else {
-                    let _ = db::update_scan_status(&app_clone, scan_id_clone, "failed", "扫描失败").await;
+                    // 从 stderr 中提取错误信息
+                    let error_msg = if !stderr.is_empty() {
+                        // 取最后几行错误信息
+                        let error_lines: Vec<&str> = stderr.lines().rev().take(5).collect();
+                        format!("扫描失败: {}", error_lines.into_iter().rev().collect::<Vec<_>>().join("\n"))
+                    } else {
+                        "扫描失败".to_string()
+                    };
+                    let _ = db::update_scan_status(&app_clone, scan_id_clone, "failed", &error_msg).await;
                 }
                 
                 // 解析结果
@@ -604,7 +740,15 @@ async fn run_with_embedded_python(
                 let _ = parse_scan_results(&app_clone, scan_id_clone).await;
             }
             Err(e) => {
-                let _ = db::update_scan_status(&app_clone, scan_id_clone, "failed", &format!("Python 执行错误: {}", e)).await;
+                // 记录详细错误信息
+                let error_msg = format!("Python 执行错误: {}", e);
+                let _ = app_clone.emit("scan-log", serde_json::json!({
+                    "scan_id": scan_id_clone,
+                    "level": "error",
+                    "message": error_msg
+                }));
+                let _ = db::add_scan_log(&app_clone, scan_id_clone, "error", &error_msg).await;
+                let _ = db::update_scan_status(&app_clone, scan_id_clone, "failed", &error_msg).await;
             }
         }
     });
