@@ -26,6 +26,16 @@
             <span>设置</span>
           </el-menu-item>
         </el-menu>
+        
+        <div class="sidebar-footer">
+          <div class="tool-info">
+            <p class="tool-title">基于 Strix</p>
+            <p class="tool-desc">
+              本项目使用 <a href="https://github.com/usestrix/strix" target="_blank" rel="noopener noreferrer">Strix</a> 
+              开源 AI 渗透测试工具，提供自动化安全扫描和漏洞检测能力。
+            </p>
+          </div>
+        </div>
       </el-aside>
 
       <!-- 主内容区 -->
@@ -34,14 +44,14 @@
           <NewScan @scan-started="handleScanStarted" />
         </div>
         <div v-else-if="activeMenu === 'scans'" class="content-section">
-          <el-row :gutter="20">
-            <el-col :span="16">
+          <div class="scans-layout">
+            <div class="scan-history-section">
               <ScanHistory @scan-selected="handleScanSelected" />
-            </el-col>
-            <el-col :span="8">
+            </div>
+            <div class="scan-logs-section">
               <ScanLogs :scan-id="selectedScanId" />
-            </el-col>
-          </el-row>
+            </div>
+          </div>
         </div>
         <div v-else-if="activeMenu === 'settings'" class="content-section">
           <Settings />
@@ -88,46 +98,111 @@ const handleScanSelected = (scanId: number) => {
 }
 
 .sidebar {
-  background-color: var(--bg-primary, #1e1e1e);
-  border-right: 1px solid var(--border-primary, #333);
+  background-color: var(--bg-primary, #ffffff);
+  border-right: 1px solid var(--border-primary, #d4d4d4);
   display: flex;
   flex-direction: column;
 }
 
 .sidebar-header {
   padding: 20px;
-  border-bottom: 1px solid var(--border-primary, #333);
-  background-color: var(--bg-secondary, #252525);
+  border-bottom: 1px solid var(--border-primary, #d4d4d4);
+  background-color: var(--bg-secondary, #f5f5f5);
 }
 
 .sidebar-header h1 {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
   margin-bottom: 8px;
 }
 
 .subtitle {
   margin: 0;
   font-size: 12px;
-  color: var(--text-secondary, #999);
+  color: var(--text-secondary, #333333);
 }
 
 .sidebar-menu {
   flex: 1;
   border-right: none;
-  background-color: var(--bg-primary, #1e1e1e);
+  background-color: var(--bg-primary, #ffffff);
+}
+
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-primary, #d4d4d4);
+  background-color: var(--bg-secondary, #f5f5f5);
+}
+
+.tool-info {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tool-title {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: var(--text-primary, #000000);
+  font-size: 13px;
+}
+
+.tool-desc {
+  margin: 0;
+  color: var(--text-secondary, #333333);
+  font-size: 11px;
+}
+
+.tool-desc a {
+  color: var(--color-primary, #409eff);
+  text-decoration: none;
+}
+
+.tool-desc a:hover {
+  text-decoration: underline;
 }
 
 .main-content {
-  background-color: var(--bg-primary, #1e1e1e);
+  background-color: var(--bg-primary, #ffffff);
   padding: 20px;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .content-section {
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.scans-layout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.scan-history-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.scan-logs-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 </style>
 

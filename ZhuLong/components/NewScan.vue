@@ -7,7 +7,7 @@
         </div>
       </template>
 
-      <el-form :model="scanConfig" label-width="120px" :rules="rules" ref="formRef">
+      <el-form :model="scanConfig" label-width="120px" :rules="rules" ref="formRef" class="scan-form">
         <el-form-item label="扫描目标" prop="targets" required>
           <el-input
             v-model="targetInput"
@@ -93,7 +93,7 @@
             <el-icon><VideoPlay /></el-icon>
             开始扫描
           </el-button>
-          <el-button @click="checkEnvironment" :loading="checking">
+          <el-button @click="checkEnvironment" :loading="checking" size="large">
             <el-icon><Tools /></el-icon>
             检查环境
           </el-button>
@@ -106,6 +106,15 @@
       <template #header>
         <div class="card-header">
           <span>环境检查结果</span>
+          <el-button
+            text
+            circle
+            @click="closeEnvCheck"
+            class="close-btn"
+            title="关闭"
+          >
+            <el-icon><Close /></el-icon>
+          </el-button>
         </div>
       </template>
       <div class="env-status">
@@ -121,7 +130,25 @@
             <Check v-if="envCheckResult.python" />
             <Close v-else />
           </el-icon>
-          <span>Python: {{ envCheckResult.python ? '已安装' : '未安装' }}</span>
+          <span>系统 Python: {{ envCheckResult.python ? '已安装' : '未安装' }}</span>
+        </div>
+        <div class="env-item">
+          <el-icon :class="envCheckResult.embeddedPython ? 'success' : 'error'">
+            <Check v-if="envCheckResult.embeddedPython" />
+            <Close v-else />
+          </el-icon>
+          <span>内嵌 Python: {{ envCheckResult.embeddedPython ? '可用' : '不可用' }}</span>
+        </div>
+      </div>
+      <div class="env-description">
+        <el-divider />
+        <div class="description-content">
+          <p><strong>环境说明：</strong></p>
+          <ul>
+            <li><strong>Docker：</strong>Strix 扫描工具需要 Docker 环境来运行扫描容器。如果未安装，请访问 <a href="https://www.docker.com/get-started" target="_blank">Docker 官网</a> 下载安装。</li>
+            <li><strong>系统 Python：</strong>如果内嵌 Python 不可用，应用会回退使用系统 Python。建议安装 Python 3.8+ 作为备用方案。</li>
+            <li><strong>内嵌 Python：</strong>应用内置的 Python 解释器，优先使用。如果不可用，会自动回退到系统 Python。内嵌 Python 的优势是不依赖系统环境，更加稳定可靠。</li>
+          </ul>
         </div>
       </div>
     </el-card>
@@ -140,7 +167,7 @@ const formRef = ref()
 const scanning = ref(false)
 const checking = ref(false)
 const targetInput = ref('')
-const envCheckResult = ref<{ docker: boolean; python: boolean } | null>(null)
+const envCheckResult = ref<{ docker: boolean; python: boolean; embeddedPython: boolean } | null>(null)
 
 const scanConfig = ref({
   targets: [] as string[],
@@ -178,24 +205,70 @@ const removeTarget = (index: number) => {
   scanConfig.value.targets.splice(index, 1)
 }
 
+const closeEnvCheck = () => {
+  envCheckResult.value = null
+}
+
 const checkEnvironment = async () => {
   checking.value = true
+  envCheckResult.value = null
+  
   try {
-    const [docker, python] = await Promise.all([
-      invoke<boolean>('check_docker'),
-      invoke<boolean>('check_python'),
-    ])
-    
-    envCheckResult.value = { docker, python }
-    
-    if (!docker) {
-      ElMessage.warning('Docker 未安装，Strix 需要 Docker 环境')
+    // 分别检查每个环境，即使某个失败也继续检查其他的
+    const results = {
+      docker: false,
+      python: false,
+      embeddedPython: false,
     }
-    if (!python) {
-      ElMessage.warning('Python 未安装，但应用已内置 Python 运行时')
+    
+    // 检查 Docker
+    try {
+      results.docker = await invoke<boolean>('check_docker')
+    } catch (error: any) {
+      console.error('Docker 检查失败:', error)
+      results.docker = false
+    }
+    
+    // 检查系统 Python
+    try {
+      results.python = await invoke<boolean>('check_python')
+    } catch (error: any) {
+      console.error('系统 Python 检查失败:', error)
+      results.python = false
+    }
+    
+    // 检查内嵌 Python
+    try {
+      results.embeddedPython = await invoke<boolean>('check_embedded_python')
+    } catch (error: any) {
+      console.error('内嵌 Python 检查失败:', error)
+      results.embeddedPython = false
+    }
+    
+    envCheckResult.value = results
+    
+    // 显示检查结果提示
+    const messages: string[] = []
+    if (!results.docker) {
+      messages.push('Docker 未安装，Strix 需要 Docker 环境')
+    }
+    if (!results.python && !results.embeddedPython) {
+      messages.push('系统 Python 和内嵌 Python 都不可用，扫描可能无法运行')
+    } else if (!results.embeddedPython && results.python) {
+      messages.push('内嵌 Python 不可用，将使用系统 Python')
+    } else if (results.embeddedPython) {
+      messages.push('内嵌 Python 可用，将优先使用')
+    }
+    
+    if (messages.length > 0) {
+      messages.forEach(msg => ElMessage.warning(msg))
+    } else {
+      ElMessage.success('所有环境检查通过')
     }
   } catch (error: any) {
-    ElMessage.error(`环境检查失败: ${error.message}`)
+    const errorMessage = error?.message || error?.toString() || '未知错误'
+    console.error('环境检查失败:', error)
+    ElMessage.error(`环境检查失败: ${errorMessage}`)
   } finally {
     checking.value = false
   }
@@ -247,13 +320,28 @@ const startScan = async () => {
 
 <style scoped>
 .new-scan {
-  max-width: 900px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
 .scan-card {
-  background-color: var(--bg-secondary, #252525);
-  border: 1px solid var(--border-primary, #333);
+  background-color: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-primary, #d4d4d4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scan-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .card-header {
@@ -262,7 +350,20 @@ const startScan = async () => {
   align-items: center;
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
+}
+
+.close-btn {
+  padding: 6px;
+  color: var(--text-secondary, #666666);
+  font-size: 18px;
+  transition: all 0.3s;
+}
+
+.close-btn:hover {
+  color: #f56c6c;
+  background-color: rgba(245, 108, 108, 0.1);
+  transform: scale(1.1);
 }
 
 .target-tags {
@@ -270,8 +371,8 @@ const startScan = async () => {
 }
 
 .env-check-card {
-  background-color: var(--bg-secondary, #252525);
-  border: 1px solid var(--border-primary, #333);
+  background-color: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-primary, #d4d4d4);
 }
 
 .env-status {
@@ -283,7 +384,7 @@ const startScan = async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 
 .env-item .success {
@@ -292,6 +393,45 @@ const startScan = async () => {
 
 .env-item .error {
   color: #f56c6c;
+}
+
+.env-description {
+  margin-top: 16px;
+}
+
+.description-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary, #333333);
+}
+
+.description-content p {
+  margin-bottom: 8px;
+}
+
+.description-content ul {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.description-content li {
+  margin-bottom: 8px;
+}
+
+.description-content a {
+  color: var(--color-primary, #409eff);
+  text-decoration: none;
+}
+
+.description-content a:hover {
+  text-decoration: underline;
+}
+
+.scan-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 </style>
 

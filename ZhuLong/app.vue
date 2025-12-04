@@ -18,6 +18,8 @@ html, body, #__nuxt {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  background-color: #ffffff;
+  color: #000000;
 }
 
 .zhulong-container {
@@ -25,6 +27,8 @@ html, body, #__nuxt {
   width: 100%;
   display: flex;
   flex-direction: column;
+  background-color: #ffffff;
+  color: #000000;
 }
 </style>
 

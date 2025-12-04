@@ -1,13 +1,13 @@
 :root {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #252525;
-  --bg-hover: #2d2d2d;
-  --bg-active: #333;
-  --text-primary: #ffffff;
-  --text-secondary: #cccccc;
-  --text-tertiary: #999999;
-  --border-primary: #333;
-  --border-secondary: #444;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-hover: #e8e8e8;
+  --bg-active: #d4d4d4;
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --text-tertiary: #666666;
+  --border-primary: #d4d4d4;
+  --border-secondary: #b0b0b0;
   --color-primary: #409eff;
 }
 
@@ -82,5 +82,32 @@ body {
 .el-button--primary {
   background-color: var(--color-primary);
   border-color: var(--color-primary);
+}
+
+.el-menu {
+  background-color: var(--bg-primary);
+  border-color: var(--border-primary);
+}
+
+.el-menu-item {
+  color: var(--text-primary);
+}
+
+.el-menu-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.el-menu-item.is-active {
+  background-color: var(--bg-active);
+  color: var(--color-primary);
+}
+
+.el-aside {
+  background-color: var(--bg-primary);
+}
+
+.el-main {
+  background-color: var(--bg-primary);
 }
 

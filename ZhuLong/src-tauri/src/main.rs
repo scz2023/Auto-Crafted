@@ -119,9 +119,13 @@ async fn check_docker() -> Result<bool, String> {
         .arg("--version")
         .output()
         .await
-        .map_err(|_| "Docker 未安装或不在 PATH 中".to_string())?;
+        .map_err(|e| format!("Docker 未安装或不在 PATH 中: {}", e))?;
     
-    Ok(output.status.success())
+    if !output.status.success() {
+        return Err("Docker 命令执行失败".to_string());
+    }
+    
+    Ok(true)
 }
 
 #[tauri::command]
@@ -138,11 +142,19 @@ async fn check_python() -> Result<bool, String> {
                 .arg("--version")
                 .output()
                 .await
-                .map_err(|_| "Python 未安装或不在 PATH 中".to_string())?
+                .map_err(|e| format!("系统 Python 未安装或不在 PATH 中: {}", e))?
         }
     };
     
     Ok(output.status.success())
+}
+
+#[tauri::command]
+async fn check_embedded_python() -> Result<bool, String> {
+    match python_embed::init_python() {
+        Ok(_) => Ok(true),
+        Err(e) => Err(format!("内嵌 Python 初始化失败: {}", e))
+    }
 }
 
 fn main() {
@@ -158,7 +170,8 @@ fn main() {
             stop_scan,
             get_scan_logs,
             check_docker,
-            check_python
+            check_python,
+            check_embedded_python
         ])
         .manage(ScanProcesses::default())
         .setup(|app| {

@@ -120,11 +120,20 @@ watch(() => props.scanId, async (newId) => {
 
 <style scoped>
 .logs-card {
-  background-color: var(--bg-secondary, #252525);
-  border: 1px solid var(--border-primary, #333);
+  background-color: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-primary, #d4d4d4);
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.logs-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .card-header {
@@ -133,7 +142,7 @@ watch(() => props.scanId, async (newId) => {
   align-items: center;
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 
 .logs-container {
@@ -142,20 +151,20 @@ watch(() => props.scanId, async (newId) => {
   font-family: 'Courier New', monospace;
   font-size: 12px;
   padding: 8px;
-  background-color: var(--bg-primary, #1e1e1e);
-  color: var(--text-primary, #fff);
-  max-height: 400px;
+  background-color: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #000000);
+  min-height: 0;
 }
 
 .log-line {
   display: flex;
   gap: 8px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--border-tertiary, #2a2a2a);
+  border-bottom: 1px solid var(--border-tertiary, #e0e0e0);
 }
 
 .log-time {
-  color: var(--text-tertiary, #666);
+  color: var(--text-tertiary, #666666);
   min-width: 80px;
 }
 
@@ -186,7 +195,7 @@ watch(() => props.scanId, async (newId) => {
 }
 
 .log-info {
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 
 .log-error {

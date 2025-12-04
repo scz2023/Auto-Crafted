@@ -238,6 +238,30 @@ onUnmounted(() => {
 <style scoped>
 .scan-history {
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.scan-history :deep(.el-card) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scan-history :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.scan-history :deep(.el-table) {
+  flex: 1;
+  overflow: auto;
 }
 
 .card-header {
@@ -246,11 +270,11 @@ onUnmounted(() => {
   align-items: center;
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 
 .result-content {
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 
 .result-stats {
@@ -262,21 +286,21 @@ onUnmounted(() => {
 .stat-item {
   text-align: center;
   padding: 16px;
-  background-color: var(--bg-secondary, #252525);
+  background-color: var(--bg-secondary, #f5f5f5);
   border-radius: 8px;
   min-width: 100px;
 }
 
 .stat-label {
   font-size: 14px;
-  color: var(--text-secondary, #ccc);
+  color: var(--text-secondary, #333333);
   margin-bottom: 8px;
 }
 
 .stat-value {
   font-size: 24px;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 
 .stat-value.critical {
@@ -301,7 +325,7 @@ onUnmounted(() => {
 
 .vulnerabilities h3 {
   margin-bottom: 16px;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 </style>
 

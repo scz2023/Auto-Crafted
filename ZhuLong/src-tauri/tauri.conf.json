@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "烛龙 - AI 渗透测试工具",
-        "width": 1400,
-        "height": 900,
-        "minWidth": 1000,
-        "minHeight": 700,
+        "width": 1000,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
         "visible": true,

@@ -1,6 +1,6 @@
 <template>
   <div class="settings">
-    <el-card>
+    <el-card class="settings-card">
       <template #header>
         <div class="card-header">
           <span>设置</span>
@@ -44,14 +44,14 @@ const saveSettings = () => {
 
 <style scoped>
 .settings {
-  max-width: 600px;
-  margin: 0 auto;
+  width: 100%;
+  height: auto;
 }
 
 .card-header {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary, #000000);
 }
 </style>
 
