@@ -78,6 +78,15 @@ pub fn init_database(app: &AppHandle) -> SqlResult<()> {
         [],
     )?;
     
+    // 创建设置表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
+    
     Ok(())
 }
 
@@ -350,5 +359,50 @@ pub fn update_scan_results_path(
     )?;
     
     Ok(())
+}
+
+pub fn save_setting(app: &AppHandle, key: &str, value: &str) -> SqlResult<()> {
+    let conn = get_connection(app)?;
+    
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+        params![key, value],
+    )?;
+    
+    Ok(())
+}
+
+pub fn get_setting(app: &AppHandle, key: &str) -> SqlResult<Option<String>> {
+    let conn = get_connection(app)?;
+    
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+    
+    let mut rows = stmt.query_map(params![key], |row| {
+        Ok(row.get::<_, String>(0)?)
+    })?;
+    
+    if let Some(row) = rows.next() {
+        Ok(Some(row?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn get_all_settings(app: &AppHandle) -> SqlResult<std::collections::HashMap<String, String>> {
+    let conn = get_connection(app)?;
+    
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    
+    let mut settings = std::collections::HashMap::new();
+    for row in rows {
+        let (key, value) = row?;
+        settings.insert(key, value);
+    }
+    
+    Ok(settings)
 }
 

@@ -157,6 +157,24 @@ async fn check_embedded_python() -> Result<bool, String> {
     }
 }
 
+#[tauri::command]
+fn save_setting(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    db::save_setting(&app, &key, &value)
+        .map_err(|e| format!("保存设置失败: {}", e))
+}
+
+#[tauri::command]
+fn get_setting(app: AppHandle, key: String) -> Result<Option<String>, String> {
+    db::get_setting(&app, &key)
+        .map_err(|e| format!("获取设置失败: {}", e))
+}
+
+#[tauri::command]
+fn get_all_settings(app: AppHandle) -> Result<std::collections::HashMap<String, String>, String> {
+    db::get_all_settings(&app)
+        .map_err(|e| format!("获取所有设置失败: {}", e))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -171,7 +189,10 @@ fn main() {
             get_scan_logs,
             check_docker,
             check_python,
-            check_embedded_python
+            check_embedded_python,
+            save_setting,
+            get_setting,
+            get_all_settings
         ])
         .manage(ScanProcesses::default())
         .setup(|app| {

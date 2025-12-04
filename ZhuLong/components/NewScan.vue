@@ -45,36 +45,16 @@
           />
         </el-form-item>
 
-        <el-divider>LLM 配置</el-divider>
-
-        <el-form-item label="LLM 提供商" prop="llmProvider" required>
-          <el-select v-model="scanConfig.llmProvider" placeholder="选择 LLM 提供商">
-            <el-option label="OpenAI GPT-5" value="openai/gpt-5" />
-            <el-option label="Anthropic Claude Sonnet 4.5" value="anthropic/claude-sonnet-4-5" />
-            <el-option label="本地模型 (Ollama)" value="ollama/llama3" />
-            <el-option label="自定义" value="custom" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="API Key" prop="llmApiKey" required>
-          <el-input
-            v-model="scanConfig.llmApiKey"
-            type="password"
-            show-password
-            placeholder="输入 LLM API Key"
-          />
-        </el-form-item>
-
-        <el-form-item
-          label="API Base URL"
-          prop="llmApiBase"
-          v-if="scanConfig.llmProvider.includes('ollama') || scanConfig.llmProvider === 'custom'"
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 16px"
         >
-          <el-input
-            v-model="scanConfig.llmApiBase"
-            placeholder="例如：http://localhost:11434 (Ollama)"
-          />
-        </el-form-item>
+          <template #default>
+            <span>LLM 配置请在 <strong>设置</strong> 页面进行配置和保存。扫描时将自动使用设置中的 LLM 配置。</span>
+          </template>
+        </el-alert>
 
         <el-form-item>
           <el-checkbox v-model="scanConfig.nonInteractive">
@@ -173,24 +153,16 @@ const scanConfig = ref({
   targets: [] as string[],
   instruction: '',
   runName: '',
-  llmProvider: 'openai/gpt-5',
-  llmApiKey: '',
-  llmApiBase: '',
   nonInteractive: false,
 })
 
+
 const rules = {
   targets: [{ required: true, message: '请至少输入一个扫描目标', trigger: 'blur' }],
-  llmProvider: [{ required: true, message: '请选择 LLM 提供商', trigger: 'change' }],
-  llmApiKey: [{ required: true, message: '请输入 API Key', trigger: 'blur' }],
 }
 
 const canStartScan = computed(() => {
-  return (
-    scanConfig.value.targets.length > 0 &&
-    scanConfig.value.llmProvider &&
-    scanConfig.value.llmApiKey
-  )
+  return scanConfig.value.targets.length > 0
 })
 
 const parseTargets = () => {
@@ -208,6 +180,7 @@ const removeTarget = (index: number) => {
 const closeEnvCheck = () => {
   envCheckResult.value = null
 }
+
 
 const checkEnvironment = async () => {
   checking.value = true
@@ -288,6 +261,49 @@ const startScan = async () => {
     return
   }
 
+  // 从设置中读取 LLM 配置
+  let llmProvider = 'openai/gpt-5'
+  let llmApiKey = ''
+  let llmApiBase: string | null = null
+
+  try {
+    const allSettings = await invoke<Record<string, string>>('get_all_settings')
+    
+    // 防御性检查：确保 allSettings 存在
+    if (!allSettings || typeof allSettings !== 'object') {
+      ElMessage.warning('无法读取设置，请在设置页面配置 LLM')
+      return
+    }
+    
+    // 读取 LLM 提供商
+    if (allSettings['defaultLlmProvider'] && typeof allSettings['defaultLlmProvider'] === 'string') {
+      llmProvider = allSettings['defaultLlmProvider']
+    } else {
+      ElMessage.warning('未配置 LLM 提供商，请在设置页面配置')
+      return
+    }
+    
+    // 读取 API Key
+    if (allSettings['llmApiKey'] && typeof allSettings['llmApiKey'] === 'string') {
+      llmApiKey = allSettings['llmApiKey']
+    } else {
+      ElMessage.warning('未配置 API Key，请在设置页面配置')
+      return
+    }
+    
+    // 读取 API Base URL
+    if (allSettings['llmApiBase'] && typeof allSettings['llmApiBase'] === 'string') {
+      llmApiBase = allSettings['llmApiBase']
+    } else if (llmProvider && typeof llmProvider === 'string' && llmProvider.includes('deepseek')) {
+      // 如果选择 DeepSeek 但没有保存的 API Base URL，设置默认值
+      llmApiBase = 'https://api.deepseek.com'
+    }
+  } catch (error: any) {
+    console.error('读取 LLM 设置失败:', error)
+    ElMessage.error(`读取 LLM 设置失败: ${error?.message || error || '未知错误'}`)
+    return
+  }
+
   scanning.value = true
   try {
     const scanId = await invoke<number>('start_scan', {
@@ -295,9 +311,9 @@ const startScan = async () => {
         targets: scanConfig.value.targets,
         instruction: scanConfig.value.instruction || null,
         runName: scanConfig.value.runName || null,
-        llmProvider: scanConfig.value.llmProvider,
-        llmApiKey: scanConfig.value.llmApiKey,
-        llmApiBase: scanConfig.value.llmApiBase || null,
+        llmProvider,
+        llmApiKey,
+        llmApiBase,
         nonInteractive: scanConfig.value.nonInteractive,
       },
     })
