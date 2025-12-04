@@ -25,6 +25,10 @@
             <el-icon><Setting /></el-icon>
             <span>设置</span>
           </el-menu-item>
+          <el-menu-item index="portswigger">
+            <el-icon><Link /></el-icon>
+            <span>推荐靶场</span>
+          </el-menu-item>
         </el-menu>
         
         <div class="sidebar-footer">
@@ -62,14 +66,27 @@
 </template>
 
 <script setup lang="ts">
-import { Plus, List, Setting } from '@element-plus/icons-vue'
+import { Plus, List, Setting, Link } from '@element-plus/icons-vue'
 import { ref } from 'vue'
+import { open } from '@tauri-apps/plugin-shell'
 
 const activeMenu = ref('new-scan')
 const selectedScanId = ref<number | null>(null)
 
 const handleMenuSelect = (index: string) => {
+  if (index === 'portswigger') {
+    openPortSwigger()
+    return
+  }
   activeMenu.value = index
+}
+
+const openPortSwigger = async () => {
+  try {
+    await open('https://portswigger.net')
+  } catch (error) {
+    console.error('打开链接失败:', error)
+  }
 }
 
 const handleScanStarted = (scanId: number) => {
