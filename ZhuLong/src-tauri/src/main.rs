@@ -363,16 +363,14 @@ except Exception as e:
     let mut cmd = Command::new("docker");
     cmd.arg("run")
         .arg("--rm")
-        .arg("--entrypoint")
-        .arg("poetry")
+        .arg("-w")
+        .arg("/app")
         .arg("-e")
         .arg(format!("STRIX_LLM={}", llm_provider))
         .arg("-e")
         .arg(format!("LLM_API_KEY={}", llm_api_key))
         .arg("-e")
-        .arg("PYTHONPATH=/app")
-        .arg("-w")
-        .arg("/app");
+        .arg("PYTHONPATH=/app");
     
     if let Some(base) = &llm_api_base {
         if !base.is_empty() {
@@ -380,7 +378,9 @@ except Exception as e:
         }
     }
     
-    cmd.arg(&image_name)
+    cmd.arg("--entrypoint")
+        .arg("poetry")
+        .arg(&image_name)
         .arg("run")
         .arg("python")
         .arg("-c")
