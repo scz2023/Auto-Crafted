@@ -158,6 +158,8 @@ async fn check_docker() -> Result<serde_json::Value, String> {
         "strix-agent:0.4.0",
         "usestrix/strix:0.4.0",
         "strix:latest",
+        "ghcr.io/usestrix/strix-sandbox:0.1.10",
+        "ghcr.io/usestrix/strix-sandbox:latest",
     ];
     
     let mut image_found = false;
@@ -182,20 +184,142 @@ async fn check_docker() -> Result<serde_json::Value, String> {
         }
     }
     
+    // 检查是否有正在运行的 Strix 容器
+    let mut running_containers: Vec<serde_json::Value> = Vec::new();
+    
+    // 方法1: 通过容器名称查找（名称包含 strix-scan-）
+    let ps_output = Command::new("docker")
+        .arg("ps")
+        .arg("--format")
+        .arg("{{.Names}}|{{.Image}}|{{.Status}}|{{.ID}}")
+        .arg("--filter")
+        .arg("name=strix-scan-")
+        .output()
+        .await;
+    
+    if let Ok(output) = ps_output {
+        if let Ok(stdout) = String::from_utf8(output.stdout) {
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 4 {
+                    let name = parts[0].trim().to_string();
+                    let image = parts[1].trim().to_string();
+                    let status = parts[2].trim().to_string();
+                    let id = parts[3].trim().to_string();
+                    
+                    running_containers.push(json!({
+                        "name": name,
+                        "image": image,
+                        "status": status,
+                        "id": id,
+                    }));
+                }
+            }
+        }
+    }
+    
+    // 方法2: 通过标签查找（标签包含 strix-scan-id）
+    if running_containers.is_empty() {
+        let ps_output = Command::new("docker")
+            .arg("ps")
+            .arg("--format")
+            .arg("{{.Names}}|{{.Image}}|{{.Status}}|{{.ID}}")
+            .arg("--filter")
+            .arg("label=strix-scan-id")
+            .output()
+            .await;
+        
+        if let Ok(output) = ps_output {
+            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                for line in stdout.lines() {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    if parts.len() >= 4 {
+                        let name = parts[0].trim().to_string();
+                        let image = parts[1].trim().to_string();
+                        let status = parts[2].trim().to_string();
+                        let id = parts[3].trim().to_string();
+                        
+                        // 避免重复添加
+                        if !running_containers.iter().any(|c| c["name"].as_str() == Some(&name)) {
+                            running_containers.push(json!({
+                                "name": name,
+                                "image": image,
+                                "status": status,
+                                "id": id,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 方法3: 通过镜像名称查找（使用 strix 相关镜像的容器）
+    if running_containers.is_empty() && image_found {
+        let ps_output = Command::new("docker")
+            .arg("ps")
+            .arg("--format")
+            .arg("{{.Names}}|{{.Image}}|{{.Status}}|{{.ID}}")
+            .arg("--filter")
+            .arg(format!("ancestor={}", found_image_name))
+            .output()
+            .await;
+        
+        if let Ok(output) = ps_output {
+            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                for line in stdout.lines() {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    if parts.len() >= 4 {
+                        let name = parts[0].trim().to_string();
+                        let image = parts[1].trim().to_string();
+                        let status = parts[2].trim().to_string();
+                        let id = parts[3].trim().to_string();
+                        
+                        // 只添加名称包含 strix 的容器
+                        if name.contains("strix") || name.contains("Strix") {
+                            running_containers.push(json!({
+                                "name": name,
+                                "image": image,
+                                "status": status,
+                                "id": id,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    let has_running_container = !running_containers.is_empty();
+    
     if image_found {
+        let mut message = "Docker 环境就绪".to_string();
+        if has_running_container {
+            message = format!("Docker 环境就绪，发现 {} 个正在运行的 Strix 容器", running_containers.len());
+        }
+        
         Ok(json!({
             "installed": true,
             "running": true,
             "image_pulled": true,
             "image_name": found_image_name,
-            "message": "Docker 环境就绪"
+            "has_running_container": has_running_container,
+            "running_containers": running_containers,
+            "message": message
         }))
     } else {
+        let mut message = "Docker 已安装并运行，但未找到 Strix 镜像。请运行: cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 .".to_string();
+        if has_running_container {
+            message = format!("发现 {} 个正在运行的 Strix 容器，但未找到 Strix 镜像", running_containers.len());
+        }
+        
         Ok(json!({
             "installed": true,
             "running": true,
             "image_pulled": false,
-            "message": "Docker 已安装并运行，但未找到 Strix 镜像。请运行: cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 ."
+            "has_running_container": has_running_container,
+            "running_containers": running_containers,
+            "message": message
         }))
     }
 }

@@ -119,6 +119,43 @@
           </el-icon>
           <span>Strix 镜像: {{ envCheckResult.image_pulled ? (envCheckResult.image_name ? `已拉取 (${envCheckResult.image_name})` : '已拉取') : '未拉取' }}</span>
         </div>
+        <div class="env-item" v-if="envCheckResult.installed && envCheckResult.running && envCheckResult.has_running_container">
+          <el-icon class="success">
+            <Check />
+          </el-icon>
+          <span>Strix 容器: 发现 {{ envCheckResult.running_containers?.length || 0 }} 个正在运行的容器</span>
+        </div>
+      </div>
+      <!-- 显示运行中的容器列表 -->
+      <div v-if="envCheckResult.has_running_container && envCheckResult.running_containers && envCheckResult.running_containers.length > 0" class="running-containers" style="margin-top: 16px">
+        <el-divider />
+        <p style="margin-bottom: 12px; font-weight: 600; color: #409eff">
+          <el-icon><InfoFilled /></el-icon>
+          正在运行的 Strix 容器：
+        </p>
+        <div class="container-list">
+          <div 
+            v-for="(container, index) in envCheckResult.running_containers" 
+            :key="index"
+            class="container-item"
+            style="padding: 12px; margin-bottom: 8px; background: #f5f7fa; border-radius: 4px; border-left: 3px solid #67c23a"
+          >
+            <div style="display: flex; justify-content: space-between; align-items: center">
+              <div>
+                <div style="font-weight: 600; margin-bottom: 4px">
+                  <el-icon style="margin-right: 4px"><Box /></el-icon>
+                  {{ container.name }}
+                </div>
+                <div style="font-size: 12px; color: #909399; margin-left: 20px">
+                  <div>镜像: {{ container.image }}</div>
+                  <div>状态: {{ container.status }}</div>
+                  <div>ID: {{ container.id.substring(0, 12) }}</div>
+                </div>
+              </div>
+              <el-tag type="success" size="small">运行中</el-tag>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="env-description" v-if="envCheckResult.message">
         <el-divider />
@@ -192,7 +229,7 @@ docker build -f containers/Dockerfile -t strix:0.4.0 .</pre>
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { VideoPlay, Tools, Check, Close } from '@element-plus/icons-vue'
+import { VideoPlay, Tools, Check, Close, InfoFilled, Box } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
@@ -214,6 +251,13 @@ const envCheckResult = ref<{
   image_pulled: boolean;
   image_name?: string;
   message?: string;
+  has_running_container?: boolean;
+  running_containers?: Array<{
+    name: string;
+    image: string;
+    status: string;
+    id: string;
+  }>;
 } | null>(null)
 
 const scanConfig = ref({
