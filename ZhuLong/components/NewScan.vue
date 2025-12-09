@@ -176,6 +176,19 @@ docker build -f containers/Dockerfile -t strix:0.4.0 .</pre>
               一键构建镜像
             </el-button>
           </div>
+          <!-- 创建容器按钮：当镜像已拉取但没有运行容器时显示 -->
+          <div v-if="envCheckResult.image_pulled && envCheckResult.installed && envCheckResult.running && !envCheckResult.has_running_container" class="create-container-section" style="margin-top: 16px">
+            <p><strong>提示：</strong>未发现正在运行的 Strix 容器，点击下方按钮创建一个测试容器：</p>
+            <el-button
+              type="success"
+              @click="createContainer"
+              :loading="creatingContainer"
+              style="margin-top: 12px"
+            >
+              <el-icon><Box /></el-icon>
+              {{ creatingContainer ? '正在创建容器...' : '创建 Strix 容器' }}
+            </el-button>
+          </div>
         </div>
       </div>
     </el-card>
@@ -239,6 +252,7 @@ const formRef = ref()
 const scanning = ref(false)
 const checking = ref(false)
 const building = ref(false)
+const creatingContainer = ref(false)
 const showBuildDialog = ref(false)
 const buildLogs = ref<Array<{ time: string; level: string; message: string }>>([])
 const buildLogsContainer = ref<HTMLElement | null>(null)
@@ -407,6 +421,33 @@ const closeBuildDialog = () => {
   buildLogs.value = []
 }
 
+const createContainer = async () => {
+  if (creatingContainer.value) return
+  
+  creatingContainer.value = true
+  
+  try {
+    const result = await invoke<any>('create_strix_container', {
+      containerName: null
+    })
+    
+    if (result.success) {
+      ElMessage.success(result.message || '容器创建成功')
+      
+      // 重新检查环境以更新容器状态
+      await checkEnvironment()
+    } else {
+      ElMessage.error(result.message || '容器创建失败')
+    }
+  } catch (error: any) {
+    const errorMessage = error?.message || error?.toString() || '未知错误'
+    console.error('创建容器失败:', error)
+    ElMessage.error(`创建容器失败: ${errorMessage}`)
+  } finally {
+    creatingContainer.value = false
+  }
+}
+
 onMounted(() => {
   // 组件挂载时的初始化
 })
@@ -435,6 +476,8 @@ const checkEnvironment = async () => {
       ElMessage.warning('Docker 已安装但未运行，请启动 Docker Desktop')
     } else if (!result.image_pulled) {
       ElMessage.warning('Docker 环境就绪，但未找到 Strix 镜像，请构建镜像')
+    } else if (!result.has_running_container) {
+      ElMessage.info('Docker 环境就绪，但未发现运行中的容器')
     } else {
       ElMessage.success('Docker 环境检查通过，可以开始扫描')
     }

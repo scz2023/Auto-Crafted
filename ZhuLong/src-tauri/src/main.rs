@@ -5,9 +5,10 @@ mod python_embed;
 use db::init_database;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::process::Command;
 
 // 进程管理状态 - 使用 tokio::process::Child
@@ -331,6 +332,247 @@ async fn check_docker() -> Result<serde_json::Value, String> {
 // #[tauri::command]
 // async fn check_embedded_python() -> Result<bool, String> { ... }
 
+/// 查找可用端口
+async fn find_available_port() -> Result<u16, String> {
+    use tokio::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("无法绑定端口: {}", e))?;
+    let addr = listener.local_addr()
+        .map_err(|e| format!("无法获取端口地址: {}", e))?;
+    Ok(addr.port())
+}
+
+/// 生成随机 token
+fn generate_token() -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::thread_rng();
+    (0..32)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
+/// 获取工作目录（用于容器挂载）
+fn get_workspace_dir_for_container(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_dir = app.path().app_data_dir()
+        .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+    
+    let workspace_dir = app_dir.join("workspace");
+    std::fs::create_dir_all(&workspace_dir)
+        .map_err(|e| format!("创建工作目录失败: {}", e))?;
+    
+    Ok(workspace_dir)
+}
+
+#[tauri::command]
+async fn create_strix_container(
+    app: AppHandle,
+    container_name: Option<String>,
+) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    use std::time::Duration;
+    
+    // 检查 Docker 是否运行
+    let docker_running = Command::new("docker")
+        .arg("ps")
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    
+    if !docker_running {
+        return Err("Docker 未运行，请先启动 Docker Desktop".to_string());
+    }
+    
+    // 查找 Strix 镜像
+    let image_names = vec![
+        "strix:0.4.0",
+        "strix-agent:0.4.0",
+        "usestrix/strix:0.4.0",
+        "strix:latest",
+        "ghcr.io/usestrix/strix-sandbox:0.1.10",
+        "ghcr.io/usestrix/strix-sandbox:latest",
+    ];
+    
+    let mut found_image_name = None;
+    
+    for image_name in &image_names {
+        let output = Command::new("docker")
+            .arg("images")
+            .arg("--format")
+            .arg("{{.Repository}}:{{.Tag}}")
+            .output()
+            .await;
+        
+        if let Ok(output) = output {
+            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                if stdout.lines().any(|line| line.trim() == *image_name) {
+                    found_image_name = Some(image_name.to_string());
+                    break;
+                }
+            }
+        }
+    }
+    
+    let image_name = found_image_name.ok_or_else(|| {
+        "未找到 Strix Docker 镜像。请先构建镜像：cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 .".to_string()
+    })?;
+    
+    // 生成容器名称
+    let name = container_name.unwrap_or_else(|| {
+        format!("strix-scan-{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))
+    });
+    
+    // 检查容器是否已存在
+    let check_output = Command::new("docker")
+        .arg("ps")
+        .arg("-a")
+        .arg("--filter")
+        .arg(format!("name={}", name))
+        .arg("--format")
+        .arg("{{.Names}}")
+        .output()
+        .await;
+    
+    if let Ok(output) = check_output {
+        if let Ok(stdout) = String::from_utf8(output.stdout) {
+            if stdout.lines().any(|line| line.trim() == name) {
+                // 容器已存在，尝试启动
+                let start_output = Command::new("docker")
+                    .arg("start")
+                    .arg(&name)
+                    .output()
+                    .await;
+                
+                if let Ok(output) = start_output {
+                    if output.status.success() {
+                        // 获取容器信息
+                        let inspect_output = Command::new("docker")
+                            .arg("inspect")
+                            .arg(&name)
+                            .arg("--format")
+                            .arg("{{.State.Status}}|{{.Id}}|{{.Config.Image}}")
+                            .output()
+                            .await;
+                        
+                        if let Ok(output) = inspect_output {
+                            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                                let parts: Vec<&str> = stdout.trim().split('|').collect();
+                                if parts.len() >= 3 {
+                                    return Ok(json!({
+                                        "success": true,
+                                        "message": format!("容器 {} 已存在并已启动", name),
+                                        "container_name": name,
+                                        "container_id": parts[1].trim(),
+                                        "image": parts[2].trim(),
+                                        "status": parts[0].trim(),
+                                    }));
+                                }
+                            }
+                        }
+                        
+                        return Ok(json!({
+                            "success": true,
+                            "message": format!("容器 {} 已启动", name),
+                            "container_name": name,
+                        }));
+                    }
+                }
+                
+                return Err(format!("容器 {} 已存在但无法启动", name));
+            }
+        }
+    }
+    
+    // 查找可用端口
+    let caido_port = find_available_port().await?;
+    let tool_server_port = find_available_port().await?;
+    let tool_server_token = generate_token();
+    
+    // 获取工作目录
+    let workspace_dir = get_workspace_dir_for_container(&app)?;
+    let workspace_dir_str = workspace_dir.to_string_lossy().replace('\\', "/");
+    
+    // 构建 Docker run 命令
+    let mut cmd = Command::new("docker");
+    cmd.arg("run")
+        .arg("-d")  // 后台运行
+        .arg("--name")
+        .arg(&name)
+        .arg("--hostname")
+        .arg(format!("strix-scan-{}", name.replace("strix-scan-", "")))
+        .arg("-v")
+        .arg(format!("{}:/workspace", workspace_dir_str))
+        .arg("-p")
+        .arg(format!("{}:{}", caido_port, caido_port))
+        .arg("-p")
+        .arg(format!("{}:{}", tool_server_port, tool_server_port))
+        .arg("--cap-add=NET_ADMIN")
+        .arg("--cap-add=NET_RAW")
+        .arg("--label")
+        .arg(format!("strix-scan-id={}", name.replace("strix-scan-", "")))
+        .arg("-e")
+        .arg("PYTHONUNBUFFERED=1")
+        .arg("-e")
+        .arg(format!("CAIDO_PORT={}", caido_port))
+        .arg("-e")
+        .arg(format!("TOOL_SERVER_PORT={}", tool_server_port))
+        .arg("-e")
+        .arg(format!("TOOL_SERVER_TOKEN={}", tool_server_token))
+        .arg("--tty")
+        .arg(&image_name)
+        .arg("sleep")
+        .arg("infinity");
+    
+    // 执行命令
+    let output = cmd.output().await
+        .map_err(|e| format!("创建容器失败: {}", e))?;
+    
+    if !output.status.success() {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("创建容器失败: {}", error_msg));
+    }
+    
+    let container_id = String::from_utf8(output.stdout)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    
+    // 等待容器启动
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    
+    // 检查容器状态
+    let status_output = Command::new("docker")
+        .arg("inspect")
+        .arg(&name)
+        .arg("--format")
+        .arg("{{.State.Status}}")
+        .output()
+        .await;
+    
+    let status = if let Ok(output) = status_output {
+        String::from_utf8(output.stdout).unwrap_or_default().trim().to_string()
+    } else {
+        "unknown".to_string()
+    };
+    
+    Ok(json!({
+        "success": true,
+        "message": format!("容器 {} 创建成功", name),
+        "container_name": name,
+        "container_id": container_id,
+        "image": image_name,
+        "status": status,
+        "caido_port": caido_port,
+        "tool_server_port": tool_server_port,
+        "workspace": workspace_dir_str,
+    }))
+}
+
 #[tauri::command]
 fn save_setting(app: AppHandle, key: String, value: String) -> Result<(), String> {
     db::save_setting(&app, &key, &value)
@@ -547,7 +789,7 @@ fn clear_all_scans(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn build_strix_image(app: AppHandle) -> Result<(), String> {
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, BufReader};
     
     // 查找 strix-0.4.0 目录
     let strix_dir = if let Ok(current_dir) = std::env::current_dir() {
@@ -727,6 +969,7 @@ fn main() {
             clear_all_scans,
             check_docker,
             build_strix_image,
+            create_strix_container,
             save_setting,
             get_setting,
             get_all_settings,
