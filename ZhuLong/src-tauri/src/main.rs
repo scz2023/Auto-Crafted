@@ -30,6 +30,7 @@ pub struct ScanConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScanStatus {
     pub id: i64,
+    pub run_name: String,
     pub status: String, // "running", "completed", "failed", "stopped"
     pub progress: f64,
     pub message: String,
@@ -95,6 +96,81 @@ async fn get_scan_status(app: AppHandle, scan_id: i64) -> Result<ScanStatus, Str
 #[tauri::command]
 async fn get_scan_logs(app: AppHandle, scan_id: i64) -> Result<Vec<db::ScanLog>, String> {
     db::get_scan_logs(&app, scan_id).map_err(|e| format!("获取扫描日志失败: {}", e))
+}
+
+#[tauri::command]
+async fn get_scan_details(app: AppHandle, scan_id: i64) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    use rusqlite::params;
+    
+    // 获取扫描状态
+    let status = db::get_scan_status(&app, scan_id)
+        .map_err(|e| format!("获取扫描状态失败: {}", e))?;
+    
+    // 获取扫描日志
+    let logs = db::get_scan_logs(&app, scan_id)
+        .map_err(|e| format!("获取扫描日志失败: {}", e))?;
+    
+    // 获取扫描配置信息以构建命令
+    let conn = db::get_connection(&app)
+        .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+    
+    let mut stmt = conn.prepare(
+        "SELECT run_name, targets, instruction, llm_provider FROM scans WHERE id = ?1"
+    )
+    .map_err(|e| format!("准备查询失败: {}", e))?;
+    
+    let (run_name, targets_json, instruction, _llm_provider) = stmt.query_row(
+        params![scan_id],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        },
+    )
+    .map_err(|e| format!("查询扫描信息失败: {}", e))?;
+    
+    let targets: Vec<String> = serde_json::from_str(&targets_json)
+        .unwrap_or_default();
+    
+    // 构建命令字符串
+    let mut cmd_parts = vec!["poetry run strix".to_string()];
+    for target in &targets {
+        cmd_parts.push("--target".to_string());
+        cmd_parts.push(format!("'{}'", target.replace('\'', "'\"'\"'")));
+    }
+    if let Some(inst) = &instruction {
+        if !inst.is_empty() {
+            cmd_parts.push("--instruction".to_string());
+            cmd_parts.push(format!("'{}'", inst.replace('\'', "'\"'\"'")));
+        }
+    }
+    cmd_parts.push("--run-name".to_string());
+    cmd_parts.push(format!("'{}'", run_name.replace('\'', "'\"'\"'")));
+    
+    let command = cmd_parts.join(" ");
+    
+    // 格式化日志
+    let formatted_logs: Vec<serde_json::Value> = logs.iter().map(|log| {
+        json!({
+            "time": log.timestamp,
+            "level": log.level,
+            "message": log.message
+        })
+    }).collect();
+    
+    Ok(json!({
+        "runName": status.run_name,
+        "status": status.status,
+        "progress": status.progress,
+        "message": status.message,
+        "createdAt": status.created_at,
+        "command": command,
+        "logs": formatted_logs
+    }))
 }
 
 #[tauri::command]
@@ -1065,6 +1141,7 @@ fn main() {
             start_scan,
             get_scan_status,
             get_scan_result,
+            get_scan_details,
             list_scans,
             stop_scan,
             get_scan_logs,

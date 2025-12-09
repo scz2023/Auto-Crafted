@@ -123,17 +123,18 @@ pub fn get_scan_status(app: &AppHandle, scan_id: i64) -> SqlResult<crate::ScanSt
     let conn = get_connection(app)?;
     
     let mut stmt = conn.prepare(
-        "SELECT id, status, progress, message, created_at 
+        "SELECT id, run_name, status, progress, message, created_at 
          FROM scans WHERE id = ?1"
     )?;
     
     let row = stmt.query_row(params![scan_id], |row| {
         Ok(crate::ScanStatus {
             id: row.get(0)?,
-            status: row.get(1)?,
-            progress: row.get(2)?,
-            message: row.get(3)?,
-            created_at: row.get(4)?,
+            run_name: row.get(1)?,
+            status: row.get(2)?,
+            progress: row.get(3)?,
+            message: row.get(4)?,
+            created_at: row.get(5)?,
         })
     })?;
     
@@ -161,17 +162,18 @@ pub fn list_scans(app: &AppHandle) -> SqlResult<Vec<crate::ScanStatus>> {
     let conn = get_connection(app)?;
     
     let mut stmt = conn.prepare(
-        "SELECT id, status, progress, message, created_at 
+        "SELECT id, run_name, status, progress, message, created_at 
          FROM scans ORDER BY created_at DESC LIMIT 100"
     )?;
     
     let rows = stmt.query_map([], |row| {
         Ok(crate::ScanStatus {
             id: row.get(0)?,
-            status: row.get(1)?,
-            progress: row.get(2)?,
-            message: row.get(3)?,
-            created_at: row.get(4)?,
+            run_name: row.get(1)?,
+            status: row.get(2)?,
+            progress: row.get(3)?,
+            message: row.get(4)?,
+            created_at: row.get(5)?,
         })
     })?;
     

@@ -76,7 +76,7 @@ const logs = ref<Array<{ time: string; level: string; message: string }>>([])
 const logsContainer = ref<HTMLElement | null>(null)
 const scanStatus = ref<{ status: string; message: string; progress: number } | null>(null)
 let unsubscribe: (() => void) | null = null
-let statusInterval: NodeJS.Timeout | null = null
+let statusInterval: ReturnType<typeof setInterval> | null = null
 
 const clearLogs = () => {
   logs.value = []
