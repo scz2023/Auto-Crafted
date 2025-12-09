@@ -631,6 +631,53 @@ async fn test_llm_connection(
         "未找到 Strix Docker 镜像。请运行: cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 .".to_string()
     })?;
     
+    // 首先检查是否有运行中的容器
+    let mut running_container_name: Option<String> = None;
+    
+    // 方法1: 通过容器名称查找
+    let ps_output = Command::new("docker")
+        .arg("ps")
+        .arg("--format")
+        .arg("{{.Names}}")
+        .arg("--filter")
+        .arg("name=strix-scan-")
+        .output()
+        .await;
+    
+    if let Ok(output) = ps_output {
+        if let Ok(stdout) = String::from_utf8(output.stdout) {
+            if let Some(first_line) = stdout.lines().next() {
+                let name = first_line.trim();
+                if !name.is_empty() {
+                    running_container_name = Some(name.to_string());
+                }
+            }
+        }
+    }
+    
+    // 方法2: 通过标签查找
+    if running_container_name.is_none() {
+        let ps_output = Command::new("docker")
+            .arg("ps")
+            .arg("--format")
+            .arg("{{.Names}}")
+            .arg("--filter")
+            .arg("label=strix-scan-id")
+            .output()
+            .await;
+        
+        if let Ok(output) = ps_output {
+            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                if let Some(first_line) = stdout.lines().next() {
+                    let name = first_line.trim();
+                    if !name.is_empty() {
+                        running_container_name = Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    
     // 构建测试脚本
     let api_base_str = llm_api_base.as_ref()
         .map(|s| format!("r'{}'", s.replace('\\', r"\\").replace('\'', r"\'")))
@@ -647,16 +694,36 @@ try:
     
     # 设置环境变量
     os.environ["STRIX_LLM"] = r"{}"
-    os.environ["LLM_API_KEY"] = r"{}"
-    if {}:
-        os.environ["LLM_API_BASE"] = {}
+    api_key = r"{}"
+    os.environ["LLM_API_KEY"] = api_key
     
-    # 获取配置
+    # 根据模型类型设置特定的 API Key 环境变量
+    model_name = r"{}"
+    if model_name.startswith("deepseek/"):
+        os.environ["DEEPSEEK_API_KEY"] = api_key
+    elif model_name.startswith("openai/"):
+        os.environ["OPENAI_API_KEY"] = api_key
+    elif model_name.startswith("anthropic/"):
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+    elif model_name.startswith("ollama/"):
+        os.environ["OLLAMA_API_KEY"] = api_key
+    
+    if {}:
+        api_base = {}
+        os.environ["LLM_API_BASE"] = api_base
+        # 对于 Deepseek，也设置 DEEPSEEK_API_BASE
+        if model_name.startswith("deepseek/"):
+            os.environ["DEEPSEEK_API_BASE"] = api_base
+    else:
+        api_base = None
+    
+    # 获取配置（从环境变量读取，确保一致性）
     model_name = os.getenv("STRIX_LLM", "openai/gpt-5")
     api_key = os.getenv("LLM_API_KEY")
     api_base = (
         os.getenv("LLM_API_BASE")
         or os.getenv("OPENAI_API_BASE")
+        or os.getenv("DEEPSEEK_API_BASE")
         or os.getenv("LITELLM_BASE_URL")
         or os.getenv("OLLAMA_API_BASE")
     )
@@ -664,8 +731,17 @@ try:
     if not api_key:
         raise ValueError("LLM_API_KEY 未设置")
     
-    # 配置 litellm
-    litellm.api_key = api_key
+    # 配置 litellm - 使用环境变量方式，让 litellm 自动识别
+    # 对于 Deepseek，litellm 会自动从 DEEPSEEK_API_KEY 读取
+    # 但也可以显式设置
+    if model_name.startswith("deepseek/"):
+        # Deepseek 特殊处理：确保使用正确的 API key
+        if not os.getenv("DEEPSEEK_API_KEY"):
+            os.environ["DEEPSEEK_API_KEY"] = api_key
+    else:
+        # 其他模型使用通用方式
+        litellm.api_key = api_key
+    
     if api_base:
         litellm.api_base = api_base
     
@@ -720,37 +796,64 @@ except Exception as e:
 "#,
         llm_provider.replace('\\', r"\\").replace('\'', r"\'"),
         llm_api_key.replace('\\', r"\\").replace('\'', r"\'"),
+        llm_provider.replace('\\', r"\\").replace('\'', r"\'"),  // 模型名称（用于判断类型）
         if llm_api_base.is_some() { "True" } else { "False" },
         api_base_str
     );
     
     // 执行 Docker 命令
-    // 使用 --entrypoint 覆盖默认入口点，使用 poetry run python 确保使用正确的虚拟环境
     let mut cmd = Command::new("docker");
-    cmd.arg("run")
-        .arg("--rm")
-        .arg("-w")
-        .arg("/app")
-        .arg("-e")
-        .arg(format!("STRIX_LLM={}", llm_provider))
-        .arg("-e")
-        .arg(format!("LLM_API_KEY={}", llm_api_key))
-        .arg("-e")
-        .arg("PYTHONPATH=/app");
     
-    if let Some(base) = &llm_api_base {
-        if !base.is_empty() {
-            cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+    if let Some(container_name) = running_container_name {
+        // 使用运行中的容器执行测试
+        // 直接使用虚拟环境中的 Python，避免 Poetry 路径问题
+        cmd.arg("exec")
+            .arg("-w")
+            .arg("/app")  // 设置工作目录为 /app，确保能找到依赖
+            .arg("-e")
+            .arg(format!("STRIX_LLM={}", llm_provider))
+            .arg("-e")
+            .arg(format!("LLM_API_KEY={}", llm_api_key))
+            .arg("-e")
+            .arg("PYTHONPATH=/app");
+        
+        if let Some(base) = &llm_api_base {
+            if !base.is_empty() {
+                cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+            }
         }
+        
+        cmd.arg(&container_name)
+            .arg("/app/venv/bin/python")  // 直接使用虚拟环境中的 Python
+            .arg("-c")
+            .arg(&test_script);
+    } else {
+        // 创建临时容器执行测试
+        cmd.arg("run")
+            .arg("--rm")
+            .arg("-w")
+            .arg("/app")
+            .arg("-e")
+            .arg(format!("STRIX_LLM={}", llm_provider))
+            .arg("-e")
+            .arg(format!("LLM_API_KEY={}", llm_api_key))
+            .arg("-e")
+            .arg("PYTHONPATH=/app");
+        
+        if let Some(base) = &llm_api_base {
+            if !base.is_empty() {
+                cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+            }
+        }
+        
+        cmd.arg("--entrypoint")
+            .arg("poetry")
+            .arg(&image_name)
+            .arg("run")
+            .arg("python")
+            .arg("-c")
+            .arg(&test_script);
     }
-    
-    cmd.arg("--entrypoint")
-        .arg("poetry")
-        .arg(&image_name)
-        .arg("run")
-        .arg("python")
-        .arg("-c")
-        .arg(&test_script);
     
     let output = cmd.output()
         .await
