@@ -280,26 +280,40 @@ pub async fn run_scan(
         
         cmd.arg("--cap-add=NET_ADMIN")
             .arg("--cap-add=NET_RAW")
-            .arg(&image_name)
-            .arg("strix")
-            .arg("--target");
-    }
-    
-    // 添加扫描参数
-    for target in &config.targets {
-        cmd.arg(target);
-    }
-    
-    if let Some(instruction) = &config.instruction {
-        cmd.arg("--instruction").arg(instruction);
-    }
-    
-    if let Some(run_name) = &config.run_name {
-        cmd.arg("--run-name").arg(run_name);
-    }
-    
-    if config.non_interactive {
-        cmd.arg("--non-interactive");
+            .arg(&image_name);
+        
+        // 构建 strix 命令字符串（使用 bash -c 执行，确保能加载代理配置）
+        // 根据 pyproject.toml，strix 是 poetry 脚本，应该通过 poetry run 执行
+        let mut strix_cmd_parts = vec!["cd /workspace".to_string()];
+        strix_cmd_parts.push("source /etc/profile.d/proxy.sh 2>/dev/null || true".to_string());
+        strix_cmd_parts.push("poetry run strix".to_string());
+        
+        // 添加 --target 参数（每个目标都需要单独的 --target）
+        for target in &config.targets {
+            strix_cmd_parts.push("--target".to_string());
+            // 转义参数以安全地在 shell 中使用
+            let escaped = format!("'{}'", target.replace('\'', "'\"'\"'"));
+            strix_cmd_parts.push(escaped);
+        }
+        
+        if let Some(instruction) = &config.instruction {
+            strix_cmd_parts.push("--instruction".to_string());
+            let escaped = format!("'{}'", instruction.replace('\'', "'\"'\"'"));
+            strix_cmd_parts.push(escaped);
+        }
+        
+        if let Some(run_name) = &config.run_name {
+            strix_cmd_parts.push("--run-name".to_string());
+            let escaped = format!("'{}'", run_name.replace('\'', "'\"'\"'"));
+            strix_cmd_parts.push(escaped);
+        }
+        
+        if config.non_interactive {
+            strix_cmd_parts.push("--non-interactive".to_string());
+        }
+        
+        let strix_cmd = strix_cmd_parts.join(" ");
+        cmd.arg("bash").arg("-c").arg(&strix_cmd);
     }
     
     cmd.stdout(Stdio::piped())
