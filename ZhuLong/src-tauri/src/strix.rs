@@ -52,62 +52,240 @@ pub async fn run_scan(
     db::update_scan_status(app, scan_id, "running", "扫描进行中...").await
         .map_err(|e| format!("更新扫描状态失败: {}", e))?;
     
-    // 使用 Docker 执行 Strix
-    // 查找 Strix 镜像（可能的名称）
-    let image_names = vec![
-        "strix:0.4.0",
-        "strix-agent:0.4.0",
-        "usestrix/strix:0.4.0",
-        "strix:latest",
-    ];
+    // 首先检查是否有运行中的容器
+    let mut running_container_name: Option<String> = None;
     
-    let mut strix_image = None;
-    for image_name in &image_names {
-        let output = Command::new("docker")
-            .arg("images")
-            .arg("--format")
-            .arg("{{.Repository}}:{{.Tag}}")
-            .output()
-            .await;
-        
-        if let Ok(output) = output {
-            if let Ok(stdout) = String::from_utf8(output.stdout) {
-                if stdout.lines().any(|line| line.trim() == *image_name) {
-                    strix_image = Some(image_name.to_string());
-                    break;
+    // 方法1: 通过容器名称查找
+    let ps_output = Command::new("docker")
+        .arg("ps")
+        .arg("--format")
+        .arg("{{.Names}}")
+        .arg("--filter")
+        .arg("name=strix-scan-")
+        .output()
+        .await;
+    
+    if let Ok(output) = ps_output {
+        if let Ok(stdout) = String::from_utf8(output.stdout) {
+            if let Some(first_line) = stdout.lines().next() {
+                let name = first_line.trim();
+                if !name.is_empty() {
+                    running_container_name = Some(name.to_string());
                 }
             }
         }
     }
     
-    let image_name = strix_image.ok_or_else(|| {
-        "未找到 Strix Docker 镜像。请运行: cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 .".to_string()
-    })?;
+    // 方法2: 通过标签查找
+    if running_container_name.is_none() {
+        let ps_output = Command::new("docker")
+            .arg("ps")
+            .arg("--format")
+            .arg("{{.Names}}")
+            .arg("--filter")
+            .arg("label=strix-scan-id")
+            .output()
+            .await;
+        
+        if let Ok(output) = ps_output {
+            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                if let Some(first_line) = stdout.lines().next() {
+                    let name = first_line.trim();
+                    if !name.is_empty() {
+                        running_container_name = Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
     
     // 构建 Docker 命令
     let workspace_dir_str = workspace_dir.to_string_lossy().replace('\\', "/");
     
     let mut cmd = Command::new("docker");
-    cmd.arg("run")
-        .arg("--rm")
-        .arg("-i")  // 交互模式，保持 stdin 打开
-        .arg("-v")
-        .arg(format!("{}:/workspace", workspace_dir_str))
-        .arg("-e")
-        .arg(format!("STRIX_LLM={}", config.llm_provider))
-        .arg("-e")
-        .arg(format!("LLM_API_KEY={}", config.llm_api_key));
     
-    if let Some(base) = &config.llm_api_base {
-        if !base.is_empty() {
-            cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+    if let Some(container_name) = running_container_name {
+        // 使用运行中的容器执行扫描
+        cmd.arg("exec")
+            .arg("-i")  // 交互模式
+            .arg("-w")
+            .arg("/workspace")  // 设置工作目录
+            .arg("-e")
+            .arg(format!("STRIX_LLM={}", config.llm_provider))
+            .arg("-e")
+            .arg(format!("LLM_API_KEY={}", config.llm_api_key))
+            .arg("-e")
+            .arg("PYTHONPATH=/app");
+        
+        if let Some(base) = &config.llm_api_base {
+            if !base.is_empty() {
+                cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+            }
         }
+        
+        // 根据模型类型设置特定的 API Key 环境变量
+        if config.llm_provider.starts_with("deepseek/") {
+            cmd.arg("-e").arg(format!("DEEPSEEK_API_KEY={}", config.llm_api_key));
+            if let Some(base) = &config.llm_api_base {
+                if !base.is_empty() {
+                    cmd.arg("-e").arg(format!("DEEPSEEK_API_BASE={}", base));
+                }
+            }
+        } else if config.llm_provider.starts_with("openai/") {
+            cmd.arg("-e").arg(format!("OPENAI_API_KEY={}", config.llm_api_key));
+        } else if config.llm_provider.starts_with("anthropic/") {
+            cmd.arg("-e").arg(format!("ANTHROPIC_API_KEY={}", config.llm_api_key));
+        }
+        
+        // 构建 strix 命令字符串
+        // 使用 bash -c 执行，确保能加载代理配置
+        // 根据 pyproject.toml，strix 是 poetry 脚本，应该通过 poetry run 执行
+        let mut strix_cmd_parts = vec!["cd /workspace".to_string()];
+        strix_cmd_parts.push("source /etc/profile.d/proxy.sh 2>/dev/null || true".to_string());
+        strix_cmd_parts.push("poetry run strix".to_string());
+        
+        // 添加 --target 参数（每个目标都需要单独的 --target）
+        for target in &config.targets {
+            strix_cmd_parts.push("--target".to_string());
+            // 转义参数以安全地在 shell 中使用
+            let escaped = format!("'{}'", target.replace('\'', "'\"'\"'"));
+            strix_cmd_parts.push(escaped);
+        }
+        
+        if let Some(instruction) = &config.instruction {
+            strix_cmd_parts.push("--instruction".to_string());
+            let escaped = format!("'{}'", instruction.replace('\'', "'\"'\"'"));
+            strix_cmd_parts.push(escaped);
+        }
+        
+        if let Some(run_name) = &config.run_name {
+            strix_cmd_parts.push("--run-name".to_string());
+            let escaped = format!("'{}'", run_name.replace('\'', "'\"'\"'"));
+            strix_cmd_parts.push(escaped);
+        }
+        
+        if config.non_interactive {
+            strix_cmd_parts.push("--non-interactive".to_string());
+        }
+        
+        let strix_cmd = strix_cmd_parts.join(" ");
+        
+        cmd.arg(&container_name)
+            .arg("bash")
+            .arg("-c")
+            .arg(&strix_cmd);
+    } else {
+        // 查找 Strix 镜像
+        let image_names = vec![
+            "strix:0.4.0",
+            "strix-agent:0.4.0",
+            "usestrix/strix:0.4.0",
+            "strix:latest",
+            "ghcr.io/usestrix/strix-sandbox:0.1.10",
+            "ghcr.io/usestrix/strix-sandbox:latest",
+        ];
+        
+        let mut strix_image = None;
+        for image_name in &image_names {
+            let output = Command::new("docker")
+                .arg("images")
+                .arg("--format")
+                .arg("{{.Repository}}:{{.Tag}}")
+                .output()
+                .await;
+            
+            if let Ok(output) = output {
+                if let Ok(stdout) = String::from_utf8(output.stdout) {
+                    if stdout.lines().any(|line| line.trim() == *image_name) {
+                        strix_image = Some(image_name.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        
+        let image_name = strix_image.ok_or_else(|| {
+            "未找到 Strix Docker 镜像。请运行: cd strix-0.4.0 && docker build -f containers/Dockerfile -t strix:0.4.0 .".to_string()
+        })?;
+        
+        // 创建新容器需要设置所有必需的环境变量
+        // 查找可用端口
+        use tokio::net::TcpListener;
+        let caido_port = {
+            let listener = TcpListener::bind("127.0.0.1:0").await
+                .map_err(|e| format!("无法绑定端口: {}", e))?;
+            listener.local_addr()
+                .map_err(|e| format!("无法获取端口地址: {}", e))?
+                .port()
+        };
+        
+        let tool_server_port = {
+            let listener = TcpListener::bind("127.0.0.1:0").await
+                .map_err(|e| format!("无法绑定端口: {}", e))?;
+            listener.local_addr()
+                .map_err(|e| format!("无法获取端口地址: {}", e))?
+                .port()
+        };
+        
+        // 生成 token
+        use rand::Rng;
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let mut rng = rand::thread_rng();
+        let tool_server_token: String = (0..32)
+            .map(|_| {
+                let idx = rng.gen_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect();
+        
+        cmd.arg("run")
+            .arg("--rm")
+            .arg("-i")  // 交互模式，保持 stdin 打开
+            .arg("-v")
+            .arg(format!("{}:/workspace", workspace_dir_str))
+            .arg("-e")
+            .arg("PYTHONUNBUFFERED=1")
+            .arg("-e")
+            .arg(format!("CAIDO_PORT={}", caido_port))
+            .arg("-e")
+            .arg(format!("TOOL_SERVER_PORT={}", tool_server_port))
+            .arg("-e")
+            .arg(format!("TOOL_SERVER_TOKEN={}", tool_server_token))
+            .arg("-e")
+            .arg(format!("STRIX_LLM={}", config.llm_provider))
+            .arg("-e")
+            .arg(format!("LLM_API_KEY={}", config.llm_api_key))
+            .arg("-e")
+            .arg("PYTHONPATH=/app");
+        
+        if let Some(base) = &config.llm_api_base {
+            if !base.is_empty() {
+                cmd.arg("-e").arg(format!("LLM_API_BASE={}", base));
+            }
+        }
+        
+        // 根据模型类型设置特定的 API Key 环境变量
+        if config.llm_provider.starts_with("deepseek/") {
+            cmd.arg("-e").arg(format!("DEEPSEEK_API_KEY={}", config.llm_api_key));
+            if let Some(base) = &config.llm_api_base {
+                if !base.is_empty() {
+                    cmd.arg("-e").arg(format!("DEEPSEEK_API_BASE={}", base));
+                }
+            }
+        } else if config.llm_provider.starts_with("openai/") {
+            cmd.arg("-e").arg(format!("OPENAI_API_KEY={}", config.llm_api_key));
+        } else if config.llm_provider.starts_with("anthropic/") {
+            cmd.arg("-e").arg(format!("ANTHROPIC_API_KEY={}", config.llm_api_key));
+        }
+        
+        cmd.arg("--cap-add=NET_ADMIN")
+            .arg("--cap-add=NET_RAW")
+            .arg(&image_name)
+            .arg("strix")
+            .arg("--target");
     }
     
-    cmd.arg(&image_name)
-        .arg("strix")
-        .arg("--target");
-    
+    // 添加扫描参数
     for target in &config.targets {
         cmd.arg(target);
     }
