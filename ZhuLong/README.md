@@ -185,3 +185,14 @@ Strix 需要 Docker 来运行安全扫描环境：
 - ✅ 实时日志功能
 - ✅ 扫描结果自动解析
 - ✅ 进程管理功能
+
+
+
+python 3.12
+pip install strix-agent  
+
+set STRIX_LLM=deepseek/deepseek-chat  
+set LLM_API_KEY=sk-dbd5d53aba894cf190135805659713d4  
+set LLM_API_BASE=https://api.deepseek.com  
+  
+strix --target https://0aa000da04b1338b801bea0f00f900e7.web-security-academy.net/

@@ -186,6 +186,7 @@ RUN /app/venv/bin/pip install -r /home/pentester/tools/jwt_tool/requirements.txt
 RUN echo "# Sandbox Environment" > README.md
 
 COPY strix/__init__.py strix/
+COPY strix/interface/ /app/strix/interface/
 COPY strix/runtime/tool_server.py strix/runtime/__init__.py strix/runtime/runtime.py /app/strix/runtime/
 
 COPY strix/tools/__init__.py strix/tools/registry.py strix/tools/executor.py strix/tools/argument_parser.py /app/strix/tools/

@@ -139,10 +139,12 @@ pub async fn run_scan(
         
         // 构建 strix 命令字符串
         // 使用 bash -c 执行，确保能加载代理配置
-        // 根据 pyproject.toml，strix 是 poetry 脚本，应该通过 poetry run 执行
-        let mut strix_cmd_parts = vec!["cd /workspace".to_string()];
-        strix_cmd_parts.push("source /etc/profile.d/proxy.sh 2>/dev/null || true".to_string());
-        strix_cmd_parts.push("poetry run strix".to_string());
+        // 先尝试安装 strix 包（如果未安装），然后使用 poetry run strix
+        // 工作目录设置为 /workspace
+        let mut strix_cmd_parts = vec!["source /etc/profile.d/proxy.sh 2>/dev/null || true".to_string()];
+        strix_cmd_parts.push("cd /app && poetry install --no-root 2>/dev/null || true".to_string());
+        strix_cmd_parts.push("cd /workspace".to_string());
+        strix_cmd_parts.push("cd /app && poetry run strix".to_string());
         
         // 添加 --target 参数（每个目标都需要单独的 --target）
         for target in &config.targets {
